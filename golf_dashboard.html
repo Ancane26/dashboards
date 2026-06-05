@@ -408,29 +408,30 @@ function mkChart(id, cfg) { destroyChart(id); charts[id] = new Chart(document.ge
 const HEADER_ALIASES = {
   'date': 'date',
   'club': 'club',
-  'club type': 'club_type', 'club_type': 'club_type',
-  'club speed (mph)': 'club_speed', 'club_speed_mph': 'club_speed',
-  'ball speed (mph)': 'ball_speed', 'ball_speed_mph': 'ball_speed',
-  'smash factor': 'smash', 'smash_factor': 'smash',
-  'attack angle': 'attack_angle', 'attack_angle': 'attack_angle',
-  'club path': 'club_path', 'club_path': 'club_path',
-  'face angle': 'face_angle', 'face_angle': 'face_angle',
-  'face to path': 'face_to_path', 'face_to_path': 'face_to_path',
-  'launch angle': 'launch_angle', 'launch_angle': 'launch_angle',
-  'backspin (rpm)': 'backspin', 'backspin_rpm': 'backspin',
-  'spin axis': 'spin_axis', 'spin_axis': 'spin_axis',
-  'carry (yds)': 'carry', 'carry_yds': 'carry',
-  'total (yds)': 'total', 'total_yds': 'total',
-  'carry dev (yds)': 'carry_dev', 'carry_dev_yds': 'carry_dev',
-  'total dev (yds)': 'total_dev', 'total_dev_yds': 'total_dev',
-  'data quality': 'data_quality', 'data_quality': 'data_quality',
+  'club type': 'club_type', 'club_type': 'club_type', 'club\ntype': 'club_type',
+  'club speed (mph)': 'club_speed', 'club_speed_mph': 'club_speed', 'club\nspeed\n(mph)': 'club_speed', 'club speed\n(mph)': 'club_speed',
+  'ball speed (mph)': 'ball_speed', 'ball_speed_mph': 'ball_speed', 'ball\nspeed\n(mph)': 'ball_speed', 'ball speed\n(mph)': 'ball_speed',
+  'smash factor': 'smash', 'smash_factor': 'smash', 'smash\nfactor': 'smash',
+  'attack angle': 'attack_angle', 'attack_angle': 'attack_angle', 'attack\nangle': 'attack_angle',
+  'club path': 'club_path', 'club_path': 'club_path', 'club\npath': 'club_path',
+  'face angle': 'face_angle', 'face_angle': 'face_angle', 'face\nangle': 'face_angle',
+  'face to path': 'face_to_path', 'face_to_path': 'face_to_path', 'face to\npath': 'face_to_path', 'face\nto\npath': 'face_to_path',
+  'launch angle': 'launch_angle', 'launch_angle': 'launch_angle', 'launch\nangle': 'launch_angle',
+  'backspin (rpm)': 'backspin', 'backspin_rpm': 'backspin', 'backspin\n(rpm)': 'backspin',
+  'spin axis': 'spin_axis', 'spin_axis': 'spin_axis', 'spin\naxis': 'spin_axis',
+  'carry (yds)': 'carry', 'carry_yds': 'carry', 'carry\n(yds)': 'carry',
+  'total (yds)': 'total', 'total_yds': 'total', 'total\n(yds)': 'total',
+  'carry dev (yds)': 'carry_dev', 'carry_dev_yds': 'carry_dev', 'carry dev\n(yds)': 'carry_dev', 'carry\ndev\n(yds)': 'carry_dev',
+  'total dev (yds)': 'total_dev', 'total_dev_yds': 'total_dev', 'total dev\n(yds)': 'total_dev', 'total\ndev\n(yds)': 'total_dev',
+  'data quality': 'data_quality', 'data_quality': 'data_quality', 'data\nquality': 'data_quality',
 };
 const REQUIRED_RANGE_FIELDS = ['club','smash','club_path','carry'];
 
 function buildColMap(rowTokens) {
   const map = {};
   rowTokens.forEach((h, i) => {
-    const canon = HEADER_ALIASES[h];
+    // Try exact match first, then with newlines collapsed to spaces
+    const canon = HEADER_ALIASES[h] || HEADER_ALIASES[h.replace(/\n/g, ' ')];
     if (canon) map[canon] = i;
   });
   const ok = REQUIRED_RANGE_FIELDS.every(f => f in map);
@@ -591,15 +592,18 @@ function parseHoleByHole(tabValues) {
 function classifyTab(title, values) {
   const t = title.toLowerCase();
   if (t === 'range sessions') return 'range';
+  if (t === 'rounds') return 'round_summary';
+  if (t === 'hole detail' || t === 'hole-by-hole' || t === 'holes') return 'hole_by_hole';
 
   if (!values || values.length < 1) return 'unknown';
-  const h = (values[0] || []).map(c => String(c||'').toLowerCase());
-  const has = (...keys) => keys.every(k => h.some(c => c.includes(k)));
-
-  if (has('gross') && (has('gir') || has('fir'))) return 'round_summary';
-  if (has('hole') && has('par') && has('score')) return 'hole_by_hole';
-  if (has('smash') || has('club path') || has('club_path')) return 'range';
-  if (has('equipment')) return 'club_map';
+  // Scan first 5 rows to find the real header (skip banners)
+  for (let ri = 0; ri < Math.min(5, values.length); ri++) {
+    const h = (values[ri] || []).map(c => String(c||'').toLowerCase().replace(/\n/g,' '));
+    const has = (...keys) => keys.every(k => h.some(c => c.includes(k)));
+    if (has('gross') && (has('gir') || has('fir'))) return 'round_summary';
+    if (has('hole') && has('par') && has('score')) return 'hole_by_hole';
+    if (has('smash') || has('club path') || has('club_path')) return 'range';
+  }
   if (t.includes('average') || t.includes('avg')) return 'averages';
   return 'unknown';
 }
