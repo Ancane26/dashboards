@@ -462,10 +462,12 @@ function extractShot(row, colMap, lastDate) {
   const clubRaw = String(g('club') || '').trim();
   if (!clubRaw || clubRaw.toLowerCase().includes('club')) return null; // header echo
 
+  const clubType = String(g('club_type') || '').trim() || null;
   const s = {
     date: d,
     club: clubRaw,
-    club_type: String(g('club_type') || '').trim() || null,
+    club_type: clubType,
+    clubKey: clubType || clubRaw,
     club_speed: num(g('club_speed')),
     ball_speed: num(g('ball_speed')),
     smash: num(g('smash')),
@@ -665,7 +667,7 @@ async function init() {
     G.shots = rangeSessions;
     G.rounds = roundSummary;
     G.sessions = [...new Set(rangeSessions.map(s => s.date))].sort();
-    G.clubs = [...new Set(rangeSessions.map(s => s.club))].filter(Boolean).sort();
+    G.clubs = [...new Set(rangeSessions.map(s => s.clubKey))].filter(Boolean).sort();
 
     document.getElementById('state-loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
@@ -955,7 +957,7 @@ function applyRangeFilters() {
 
   let shots = G.shots.filter(s => !hardDrop(s));
   if (sess) shots = shots.filter(s => s.date === sess);
-  if (club) shots = shots.filter(s => s.club === club);
+  if (club) shots = shots.filter(s => s.clubKey === club);
   if (onlySolid) shots = shots.filter(isSolid);
 
   filteredShots = shots;
@@ -981,7 +983,7 @@ function buildRangeInsights() {
     const last3 = sessions.slice(-3);
     const ironClubs = G.clubs.filter(c => c.toLowerCase().includes('iron') || c.toLowerCase().includes('wedge'));
     const pathVals = last3.map(s => {
-      const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.club) && x.club_path !== null);
+      const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.clubKey) && x.club_path !== null);
       return ss.length ? avg(ss.map(x => x.club_path)) : null;
     }).filter(v => v !== null);
     const avgPath = avg(pathVals);
@@ -1002,7 +1004,7 @@ function buildRangeInsights() {
   // Biggest carry gap
   const gapClubs = ['Driver','3 Wood','4 Hybrid','5 Iron','6 Iron','7 Iron','8 Iron','9 Iron','Pitching Wedge','PW'];
   const medians = gapClubs.map(c => {
-    const ss = allSolid.filter(s => s.club === c && s.carry !== null && s.carry > 30);
+    const ss = allSolid.filter(s => s.clubKey === c && s.carry !== null && s.carry > 30);
     return { club: c, med: ss.length >= 3 ? perc(ss.map(s => s.carry), 50) : null };
   }).filter(x => x.med !== null);
   if (medians.length >= 2) {
@@ -1023,14 +1025,14 @@ function buildPathTrend() {
   const allSolid = solid(G.shots);
   const sessions = G.sessions;
   const ironClubs = G.clubs.filter(c => c.toLowerCase().includes('iron') || c.toLowerCase().includes('wedge'));
-  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.club === c && s.club_path !== null).length >= 3);
+  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.clubKey === c && s.club_path !== null).length >= 3);
 
   const clubColors = ['#f87171','#fbbf24','#4ade80','#60a5fa','#a78bfa','#2dd4bf','#fb923c'];
   const datasets = [];
 
   // Overall irons avg
   const overallPath = sessions.map(s => {
-    const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.club) && x.club_path !== null);
+    const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.clubKey) && x.club_path !== null);
     return ss.length ? avg(ss.map(x => x.club_path)) : null;
   });
   if (overallPath.some(v => v !== null))
@@ -1039,7 +1041,7 @@ function buildPathTrend() {
   // Per-club lines
   trackClubs.slice(0,6).forEach((club, i) => {
     const data = sessions.map(s => {
-      const ss = allSolid.filter(x => x.date === s && x.club === club && x.club_path !== null);
+      const ss = allSolid.filter(x => x.date === s && x.clubKey === club && x.club_path !== null);
       return ss.length ? avg(ss.map(x => x.club_path)) : null;
     });
     if (data.some(v => v !== null))
@@ -1081,7 +1083,7 @@ function buildGapping() {
 
   const iqrData = [], medData = [], p10Data = [], p90Data = [], labels = [];
   clubs.forEach(club => {
-    const ss = allSolid.filter(s => s.club === club && s.carry !== null && s.carry > 30);
+    const ss = allSolid.filter(s => s.clubKey === club && s.carry !== null && s.carry > 30);
     if (ss.length < 3) return;
     const carries = ss.map(s => s.carry).sort((a,b) => a-b);
     labels.push(club.replace(' Iron',' I').replace(' Wood',' W').replace('Pitching Wedge','PW'));
@@ -1172,13 +1174,13 @@ function drawDispersion() {
   // Club colors
   const sessionColors = ['#60a5fa','#a78bfa','#fbbf24','#4ade80','#f87171','#2dd4bf','#fb923c'];
   const sessionList = [...new Set(shots.map(s => s.date))].sort();
-  const clubList    = [...new Set(shots.map(s => s.club))].sort();
+  const clubList    = [...new Set(shots.map(s => s.clubKey))].sort();
 
   // Shots
   shots.forEach(s => {
     const x = toX(s.carry_dev);
     const y = toY(s.carry);
-    const col = CLUB_COLORS[s.club] || '#888';
+    const col = CLUB_COLORS[s.clubKey] || '#888';
     ctx.globalAlpha = isSolid(s) ? 0.8 : 0.3;
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(x, y, isSolid(s) ? 4 : 2.5, 0, Math.PI*2); ctx.fill();
@@ -1200,7 +1202,7 @@ function drawDispersion() {
 function buildF2PDist() {
   const selClub = document.getElementById('f2p-club').value;
   let shots = solid(G.shots).filter(s => s.face_to_path !== null);
-  if (selClub) shots = shots.filter(s => s.club === selClub);
+  if (selClub) shots = shots.filter(s => s.clubKey === selClub);
 
   if (!shots.length) {
     destroyChart('ch-f2p');
@@ -1242,11 +1244,11 @@ function buildAoAScatter() {
     document.getElementById('ch-aoa-scatter').closest('.chart-wrap').innerHTML = '<div class="no-data">Need more data for AoA scatter</div>';
     return;
   }
-  const clubs = [...new Set(shots.map(s => s.club))];
+  const clubs = [...new Set(shots.map(s => s.clubKey))];
   const clubColors2 = ['#f87171','#fbbf24','#4ade80','#60a5fa','#a78bfa','#2dd4bf','#fb923c'];
   const datasets = clubs.map((c, i) => ({
     label: c,
-    data: shots.filter(s => s.club === c).map(s => ({ x: s.attack_angle, y: s.club_path })),
+    data: shots.filter(s => s.clubKey === c).map(s => ({ x: s.attack_angle, y: s.club_path })),
     backgroundColor: mkColor(Object.values(CLUB_COLORS)[i % 9] || '#888', 0.6),
     pointRadius: 4,
   }));
@@ -1266,12 +1268,12 @@ function buildAoAScatter() {
 
 function buildSmashChart() {
   const allShots = G.shots.filter(s => s.smash !== null && s.smash > 0.6 && s.smash < 1.6);
-  const clubs = G.clubs.filter(c => allShots.some(s => s.club === c));
+  const clubs = G.clubs.filter(c => allShots.some(s => s.clubKey === c));
   if (!clubs.length) return;
 
-  const avgSmash  = clubs.map(c => avg(allShots.filter(s => s.club === c).map(s => s.smash)));
+  const avgSmash  = clubs.map(c => avg(allShots.filter(s => s.clubKey === c).map(s => s.smash)));
   const solidPct  = clubs.map(c => {
-    const ss = allShots.filter(s => s.club === c);
+    const ss = allShots.filter(s => s.clubKey === c);
     return ss.length ? solid(ss).length / ss.length * 100 : 0;
   });
 
@@ -1298,7 +1300,7 @@ function buildSmashChart() {
 function buildRollingMedian() {
   const allSolid = solid(G.shots);
   const sessions = G.sessions;
-  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.club === c && s.carry !== null).length >= 4);
+  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.clubKey === c && s.carry !== null).length >= 4);
 
   if (!trackClubs.length || sessions.length < 2) {
     document.getElementById('ch-rolling').closest('.chart-wrap').innerHTML = '<div class="no-data">Need ≥4 solid shots per club across ≥2 sessions</div>';
@@ -1309,7 +1311,7 @@ function buildRollingMedian() {
   const datasets = trackClubs.slice(0,6).map((club, i) => {
     const data = sessions.map((s, si) => {
       const window4 = sessions.slice(Math.max(0, si-3), si+1);
-      const ss = allSolid.filter(x => window4.includes(x.date) && x.club === club && x.carry !== null && x.carry > 30);
+      const ss = allSolid.filter(x => window4.includes(x.date) && x.clubKey === club && x.carry !== null && x.carry > 30);
       return ss.length ? perc(ss.map(x => x.carry), 50) : null;
     });
     return { label: club, data, borderColor: clubColors2[i % 6], tension: 0.3, pointRadius: 4, spanGaps: true };
@@ -1339,7 +1341,7 @@ function buildShotLog() {
     const tag     = isSolid(s) ? '<span class="tag tag-ok">solid</span>' : '<span class="tag tag-miss">mishit</span>';
     return `<tr>
       <td>${s.date}</td>
-      <td>${s.club}</td>
+      <td>${s.clubKey}</td>
       <td>${rnd(s.smash,2)}</td>
       <td style="color:${pathCol}">${rnd(s.club_path,1)}</td>
       <td>${rnd(s.face_to_path,1)}</td>
