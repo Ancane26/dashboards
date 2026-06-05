@@ -526,11 +526,25 @@ function buildGenericColMap(headers) {
 
 function parseRoundSummary(tabValues) {
   if (!tabValues || tabValues.length < 2) return [];
-  const headers = tabValues[0].map(h => String(h||'').toLowerCase().trim());
+  // Scan past banner rows to find the real header
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(5, tabValues.length); i++) {
+    const row = tabValues[i].map(c => String(c||'').toLowerCase().trim());
+    if (row.includes('gross') || (row.includes('date') && row.includes('course'))) { headerIdx = i; break; }
+  }
+  const headers = tabValues[headerIdx].map(h => String(h||'').toLowerCase().trim());
   const cm = buildGenericColMap(headers);
   const rounds = [];
 
-  for (let i = 1; i < tabValues.length; i++) {
+  function pct2frac(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const s = String(v).trim();
+    if (s.endsWith('%')) return parseFloat(s) / 100;
+    const n = parseFloat(s);
+    return isNaN(n) ? null : (n > 1 ? n / 100 : n);
+  }
+
+  for (let i = headerIdx + 1; i < tabValues.length; i++) {
     const row = tabValues[i];
     function g(keys) {
       for (const k of keys) { const idx = cm[k]; if (idx !== undefined && idx < row.length && row[idx] !== '') return row[idx]; }
@@ -544,8 +558,8 @@ function parseRoundSummary(tabValues) {
       gross: num(g(['gross','gross score'])),
       net: num(g(['net','net score'])),
       handicap: num(g(['handicap','hcp','index'])),
-      gir: num(g(['gir%','gir','greens in regulation %'])),
-      fir: num(g(['fir%','fir','fairways in regulation %'])),
+      gir: pct2frac(g(['gir%','greens in regulation %'])),
+      fir: pct2frac(g(['fir%','fairways in regulation %'])),
       penalties: num(g(['penalties','penalty'])),
       putts: num(g(['putts','total putts'])),
       putts3: num(g(['3 putts','3-putts','three putts'])),
