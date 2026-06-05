@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tyler Zahul — Golf Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg: #0d0d0d; --surface: #141414; --surface2: #1a1a1a; --surface3: #222;
+  --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
+  --text: #f0ede8; --muted: #888; --dim: #555;
+  --green: #4ade80; --red: #f87171; --amber: #fbbf24;
+  --blue: #60a5fa; --purple: #a78bfa; --teal: #2dd4bf; --orange: #fb923c;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'SF Pro Text','Segoe UI',system-ui,sans-serif; font-size: 14px; line-height: 1.5; }
+
+/* ── LOADING / ERROR ── */
+#state-loading, #state-error {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 40px;
+}
+.spinner {
+  width: 36px; height: 36px; border: 3px solid var(--border2);
+  border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#state-error { display: none; }
+.err-icon { font-size: 32px; }
+.err-title { font-size: 18px; font-weight: 600; color: var(--red); }
+.err-msg { font-size: 13px; color: var(--muted); max-width: 500px; }
+.retry-btn {
+  margin-top: 8px; padding: 8px 20px; border-radius: 6px;
+  border: 1px solid var(--border2); background: var(--surface2);
+  color: var(--text); cursor: pointer; font-size: 13px;
+}
+.retry-btn:hover { background: var(--surface3); }
+
+/* ── DASHBOARD ── */
+#dashboard { display: none; }
+header {
+  padding: 20px 28px 14px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: flex-end;
+}
+header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+header .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.lh-badge {
+  background: rgba(251,191,36,0.15); color: var(--amber);
+  font-size: 11px; font-weight: 600; padding: 3px 8px;
+  border-radius: 4px; letter-spacing: 0.5px; border: 1px solid rgba(251,191,36,0.3);
+}
+.main { padding: 20px 28px; max-width: 1280px; }
+
+/* ── TOP TABS ── */
+.tabs {
+  display: flex; gap: 2px; margin-bottom: 20px;
+  background: var(--surface2); padding: 3px; border-radius: 8px; width: fit-content;
+}
+.tab {
+  padding: 6px 18px; font-size: 13px; font-weight: 500;
+  border: none; background: transparent; color: var(--muted);
+  cursor: pointer; border-radius: 6px; transition: all 0.15s;
+}
+.tab.active { background: var(--surface3); color: var(--text); }
+.tab:hover:not(.active) { color: var(--text); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── INSIGHT BOX ── */
+.insight-box {
+  background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.2);
+  border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 12px;
+  color: var(--muted); line-height: 1.7;
+}
+.insight-box strong { color: var(--text); }
+.insight-box ul { padding-left: 16px; }
+.insight-box li { margin-bottom: 3px; }
+
+/* ── STAT CARDS ── */
+.stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit,minmax(145px,1fr));
+  gap: 10px; margin-bottom: 22px;
+}
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+.stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+.stat-card .value { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; }
+.stat-card .delta { font-size: 11px; margin-top: 3px; }
+.up { color: var(--green); } .down { color: var(--red); }
+.neutral { color: var(--muted); } .warn { color: var(--amber); }
+
+/* ── CHART CONTAINERS ── */
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.chart-row.full { grid-template-columns: 1fr; }
+.chart-row.thirds { grid-template-columns: 1fr 1fr 1fr; }
+.chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.chart-box h3 { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+.chart-box .ch-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+.chart-wrap { position: relative; width: 100%; }
+.no-data { display: flex; align-items: center; justify-content: center; height: 120px; color: var(--dim); font-size: 12px; }
+
+/* ── SECTION ── */
+.section-title { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.8px; margin: 18px 0 10px; }
+.divider { height: 1px; background: var(--border); margin: 18px 0; }
+
+/* ── HEATMAP ── */
+.heatmap { width: 100%; border-collapse: collapse; font-size: 11px; }
+.heatmap th { padding: 6px 10px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); text-align: center; }
+.heatmap td { padding: 5px 8px; text-align: center; border-bottom: 1px solid var(--border); font-weight: 500; }
+.heatmap tr:last-child td { border-bottom: none; }
+
+/* ── TABLES ── */
+.shot-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.shot-table th { text-align: left; padding: 7px 10px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.shot-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.shot-table tr:last-child td { border-bottom: none; }
+.shot-table tr:hover td { background: var(--surface2); }
+.tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 500; }
+.tag-ok { background: rgba(74,222,128,0.12); color: var(--green); }
+.tag-miss { background: rgba(248,113,113,0.12); color: var(--red); }
+.table-wrap { overflow-x: auto; max-height: 440px; overflow-y: auto; }
+
+/* ── FILTERS ── */
+.filter-row { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.filter-row label { font-size: 12px; color: var(--muted); }
+.filter-row select, .filter-row input[type=checkbox] { background: var(--surface2); border: 1px solid var(--border2); color: var(--text); padding: 5px 10px; border-radius: 6px; font-size: 12px; }
+
+/* ── DISPERSION CANVAS ── */
+#dispCanvas { background: var(--surface2); border-radius: 8px; display: block; width: 100%; }
+
+/* ── LEGEND ── */
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── KEY NOTE ── */
+.key-note {
+  background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.18);
+  border-radius: 6px; padding: 9px 12px; font-size: 11px; color: var(--amber);
+  margin-bottom: 14px; line-height: 1.6;
+}
+
+/* API KEY WARN */
+#apikey-warn {
+  background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3);
+  border-radius: 8px; padding: 16px; margin: 40px auto; max-width: 600px;
+  font-size: 13px; color: var(--red); text-align: center; display: none;
+}
+#apikey-warn code { background: var(--surface2); padding: 2px 6px; border-radius: 3px; font-size: 12px; color: var(--amber); }
+</style>
+</head>
+<body>
+
+<!-- ── LOADING ── -->
+<div id="state-loading">
+  <div class="spinner"></div>
+  <p style="color:var(--muted);font-size:13px">Fetching golf data from Google Sheets…</p>
+</div>
+
+<!-- ── ERROR ── -->
+<div id="state-error">
+  <div class="err-icon">⚠</div>
+  <div class="err-title">Data fetch failed</div>
+  <div class="err-msg" id="err-msg-text">Could not load sheet data.</div>
+  <button class="retry-btn" onclick="init()">Retry</button>
+</div>
+
+<!-- ── API KEY WARN (shown before fetch if placeholder detected) ── -->
+<div id="apikey-warn">
+  <strong>Sheets API key not set.</strong><br>
+  Open this file and replace <code>REPLACE_WITH_YOUR_SHEETS_API_KEY</code> with your restricted read-only Sheets API key,
+  then re-upload to Drive.
+</div>
+
+<!-- ── DASHBOARD ── -->
+<div id="dashboard">
+  <header>
+    <div>
+      <h1>Tyler Zahul — Golf Dashboard</h1>
+      <div class="sub" id="dash-sub"></div>
+    </div>
+    <span class="lh-badge">LH GOLFER</span>
+  </header>
+
+  <div class="main">
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('scorecards')">Scorecards</button>
+      <button class="tab" onclick="showTab('range')">Range</button>
+    </div>
+
+    <!-- ══ SCORECARDS PANEL ══ -->
+    <div class="panel active" id="panel-scorecards">
+      <div class="insight-box" id="sc-insights"><em>Computing insights…</em></div>
+      <div class="stat-grid" id="sc-stats"></div>
+
+      <div class="chart-row full">
+        <div class="chart-box">
+          <h3>Scoring Trend</h3>
+          <div class="ch-sub">Gross &amp; Net per round vs Handicap line (22)</div>
+          <div class="chart-wrap" style="height:240px"><canvas id="ch-scoring-trend"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <h3>GIR% &amp; FIR% Trend</h3>
+          <div class="ch-sub">Key scoring levers at 22 handicap — approach is the primary driver</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-girfir"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Score vs Par by Par Type</h3>
+          <div class="ch-sub">Avg score relative to par — par-3 bleed is common at this level</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-par-type"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <h3>Penalty Map by Club</h3>
+          <div class="ch-sub">Driver OB/lateral hazard cluster — most scoreable leak after approach</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-penalties"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Putting — Putts/Round &amp; 3-Putt Count</h3>
+          <div class="ch-sub">3-putts inflate score; avg first-putt distance drives them</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-putts"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row full">
+        <div class="chart-box">
+          <h3>Hole Heatmap — Score vs Par</h3>
+          <div class="ch-sub">Each hole × round — dark red = double+, amber = bogey, green = par/better</div>
+          <div id="sc-heatmap"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ RANGE PANEL ══ -->
+    <div class="panel" id="panel-range">
+      <div class="key-note">
+        ⚠ LH convention: club_path &gt; 0 = out-to-in (slice direction). face_to_path &lt; 0 = face open = slice.
+        spin_axis &lt; 0 = ball curves left (LH slice). All averages: SF ≥ 1.15 solid set only.
+      </div>
+      <div class="insight-box" id="rng-insights"><em>Computing insights…</em></div>
+
+      <div class="filter-row" id="rng-filters">
+        <label>Session
+          <select id="f-session" onchange="applyRangeFilters()"><option value="">All</option></select>
+        </label>
+        <label>Club
+          <select id="f-club" onchange="applyRangeFilters()"><option value="">All</option></select>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="f-solid" checked onchange="applyRangeFilters()"> Solid only (SF≥1.15)
+        </label>
+      </div>
+
+      <!-- Path trend — headline -->
+      <div class="chart-row full">
+        <div class="chart-box">
+          <h3>Club Path Trend by Session — HEADLINE</h3>
+          <div class="ch-sub">Solid irons only. Positive = out-to-in (LH slice). Goal: near 0 or negative. R10 error ±1.5–4°; flag only shifts &gt;3°.</div>
+          <div class="chart-wrap" style="height:260px"><canvas id="ch-path-trend"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <h3>Carry Gapping by Club</h3>
+          <div class="ch-sub">Solid set. Bar = IQR p25–p75. Tick = median. Gaps &gt;15 yds between clubs need attention.</div>
+          <div class="chart-wrap" style="height:260px"><canvas id="ch-gapping"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Dispersion Map</h3>
+          <div class="ch-sub">LH: right side = slice / pull-left landing. Each dot = one shot. ✕ = avg landing.</div>
+          <canvas id="dispCanvas" height="280"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <h3>Face-to-Path Distribution</h3>
+          <div class="ch-sub">Negative = face open to path (slice). Per selected club.</div>
+          <div class="filter-row" style="margin-bottom:8px">
+            <label>Club <select id="f2p-club" onchange="buildF2PDist()"><option value="">All</option></select></label>
+          </div>
+          <div class="chart-wrap" style="height:200px"><canvas id="ch-f2p"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Attack Angle vs Club Path</h3>
+          <div class="ch-sub">Test: does steeper AoA drive out-to-in path? (LH slice mechanism)</div>
+          <div class="chart-wrap" style="height:240px"><canvas id="ch-aoa-scatter"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-box">
+          <h3>Smash Factor Consistency</h3>
+          <div class="ch-sub">Per club — solid (≥1.15) vs total shots. Flag SF &gt;1.5 (R10 error).</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-smash"></canvas></div>
+        </div>
+        <div class="chart-box">
+          <h3>Rolling 4-Session Median Carry</h3>
+          <div class="ch-sub">Per club — drift detection. Decreasing = fatigue or swing change.</div>
+          <div class="chart-wrap" style="height:220px"><canvas id="ch-rolling"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-row full">
+        <div class="chart-box">
+          <h3>Shot Log</h3>
+          <div class="ch-sub">Filtered by session/club/SF toggle above</div>
+          <div class="table-wrap" id="shot-log-wrap">
+            <table class="shot-table" id="shot-log-table">
+              <thead><tr>
+                <th>Date</th><th>Club</th><th>SF</th>
+                <th>Path°</th><th>F2P°</th><th>SpinAxis</th>
+                <th>Carry</th><th>Dev</th><th>Quality</th>
+              </tr></thead>
+              <tbody id="shot-log-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div><!-- /panel-range -->
+
+  </div><!-- /main -->
+</div><!-- /dashboard -->
+
+<script>
+/* ════════════════════════════════════════════════
+   CONFIG
+════════════════════════════════════════════════ */
+const SHEET_ID = '1SnV49kV8Z1hWXttYDEN_pzpA25FOpVw_5nSwPYMYxsY';
+const API_KEY  = 'AIzaSyAyaRFYoYFo2hYZ4Kde11P_sUB2Y0CUgD0';
+
+/* ════════════════════════════════════════════════
+   UTILITIES
+════════════════════════════════════════════════ */
+function avg(arr) {
+  const v = arr.filter(x => x !== null && x !== undefined && !isNaN(x));
+  return v.length ? v.reduce((a,b) => a+b, 0) / v.length : null;
+}
+function rnd(v, n=1) { return v === null || v === undefined ? '—' : (+v).toFixed(n); }
+function pct(v) { return v === null ? '—' : (v * 100).toFixed(0) + '%'; }
+function num(x) {
+  if (x === null || x === undefined || x === '') return null;
+  const s = String(x).replace(/,/g, '.').trim();
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function dateStr(v) {
+  if (!v) return null;
+  if (typeof v === 'number') {
+    // Google Sheets serial date (days since 1899-12-30)
+    const d = new Date(Date.UTC(1899,11,30) + v * 86400000);
+    return d.toISOString().slice(0,10);
+  }
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const d = new Date(s);
+  return isNaN(d) ? s : d.toISOString().slice(0,10);
+}
+function perc(arr, p) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a,b) => a-b);
+  const i = (p/100) * (s.length - 1);
+  const lo = Math.floor(i), hi = Math.ceil(i);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+function isSolid(s) {
+  return s.smash >= 1.15 && !(s.data_quality || '').toLowerCase().includes('mishit');
+}
+function hardDrop(s) {
+  return s.smash < 0.8 || (s.data_quality || '').toLowerCase().includes('mishit');
+}
+function solid(shots) { return shots.filter(s => !hardDrop(s) && isSolid(s)); }
+function mkColor(hex, a=1) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+const CLUB_COLORS = {
+  'Driver':         '#60a5fa',
+  '3 Wood':         '#a78bfa',
+  '4 Hybrid':       '#2dd4bf',
+  '5 Iron':         '#4ade80',
+  '6 Iron':         '#86efac',
+  '7 Iron':         '#fbbf24',
+  '8 Iron':         '#fb923c',
+  '9 Iron':         '#f87171',
+  'Pitching Wedge': '#f472b6',
+  'PW':             '#f472b6',
+};
+function clubColor(club, a=0.8) {
+  const c = CLUB_COLORS[club] || '#888';
+  return mkColor(c, a);
+}
+
+const charts = {};
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+function mkChart(id, cfg) { destroyChart(id); charts[id] = new Chart(document.getElementById(id).getContext('2d'), cfg); return charts[id]; }
+
+/* ════════════════════════════════════════════════
+   RANGE SESSION DUAL-LAYOUT PARSER
+════════════════════════════════════════════════ */
+const HEADER_ALIASES = {
+  'date': 'date',
+  'club': 'club',
+  'club type': 'club_type', 'club_type': 'club_type',
+  'club speed (mph)': 'club_speed', 'club_speed_mph': 'club_speed',
+  'ball speed (mph)': 'ball_speed', 'ball_speed_mph': 'ball_speed',
+  'smash factor': 'smash', 'smash_factor': 'smash',
+  'attack angle': 'attack_angle', 'attack_angle': 'attack_angle',
+  'club path': 'club_path', 'club_path': 'club_path',
+  'face angle': 'face_angle', 'face_angle': 'face_angle',
+  'face to path': 'face_to_path', 'face_to_path': 'face_to_path',
+  'launch angle': 'launch_angle', 'launch_angle': 'launch_angle',
+  'backspin (rpm)': 'backspin', 'backspin_rpm': 'backspin',
+  'spin axis': 'spin_axis', 'spin_axis': 'spin_axis',
+  'carry (yds)': 'carry', 'carry_yds': 'carry',
+  'total (yds)': 'total', 'total_yds': 'total',
+  'carry dev (yds)': 'carry_dev', 'carry_dev_yds': 'carry_dev',
+  'total dev (yds)': 'total_dev', 'total_dev_yds': 'total_dev',
+  'data quality': 'data_quality', 'data_quality': 'data_quality',
+};
+const REQUIRED_RANGE_FIELDS = ['club','smash','club_path','carry'];
+
+function buildColMap(rowTokens) {
+  const map = {};
+  rowTokens.forEach((h, i) => {
+    const canon = HEADER_ALIASES[h];
+    if (canon) map[canon] = i;
+  });
+  const ok = REQUIRED_RANGE_FIELDS.every(f => f in map);
+  return ok ? map : null;
+}
+
+function isPlumbingCol(h) {
+  return h === '_spreadsheet_id' || h === '_sheet_name';
+}
+
+function isSkipRow(row) {
+  const joined = row.join('').toLowerCase();
+  if (!joined.trim()) return true;                           // blank
+  if (joined.includes('range session tracker')) return true; // banner
+  if (joined.includes('no_header')) return true;
+  if (row.some(c => String(c||'').toLowerCase().includes('import note'))) return true;
+  return false;
+}
+
+function extractShot(row, colMap, lastDate) {
+  function g(field) {
+    const i = colMap[field];
+    return (i === undefined || i >= row.length) ? null : row[i];
+  }
+  const rawDate = g('date');
+  const d = rawDate ? dateStr(rawDate) : lastDate;
+  if (!d) return null;
+
+  const clubRaw = String(g('club') || '').trim();
+  if (!clubRaw || clubRaw.toLowerCase().includes('club')) return null; // header echo
+
+  const s = {
+    date: d,
+    club: clubRaw,
+    club_type: String(g('club_type') || '').trim() || null,
+    club_speed: num(g('club_speed')),
+    ball_speed: num(g('ball_speed')),
+    smash: num(g('smash')),
+    attack_angle: num(g('attack_angle')),
+    club_path: num(g('club_path')),
+    face_angle: num(g('face_angle')),
+    face_to_path: num(g('face_to_path')),
+    launch_angle: num(g('launch_angle')),
+    backspin: num(g('backspin')),
+    spin_axis: num(g('spin_axis')),
+    carry: num(g('carry')),
+    total: num(g('total')),
+    carry_dev: num(g('carry_dev')),
+    total_dev: num(g('total_dev')),
+    data_quality: String(g('data_quality') || '').trim() || '',
+  };
+
+  if (s.smash === null && s.carry === null) return null; // fully empty data row
+  return s;
+}
+
+function parseRangeSessions(tabValues) {
+  const shots = [];
+  let colMap = null;
+  let lastDate = null;
+
+  for (const row of tabValues) {
+    if (isSkipRow(row)) continue;
+    const tokens = row.map(c => String(c || '').toLowerCase().trim());
+    // Skip rows with only plumbing columns
+    if (tokens.filter(t => t && !isPlumbingCol(t)).length < 3) continue;
+
+    const tryMap = buildColMap(tokens);
+    if (tryMap) { colMap = tryMap; continue; } // header row
+
+    if (!colMap) continue;
+
+    const shot = extractShot(row, colMap, lastDate);
+    if (!shot) continue;
+    if (shot.date) lastDate = shot.date;
+    if (hardDrop(shot) && shot.smash < 0.6) continue; // ultra-garbage
+    shots.push(shot);
+  }
+  return shots;
+}
+
+/* ════════════════════════════════════════════════
+   SCORECARD PARSERS
+════════════════════════════════════════════════ */
+function buildGenericColMap(headers) {
+  const map = {};
+  headers.forEach((h, i) => { map[String(h||'').toLowerCase().trim()] = i; });
+  return map;
+}
+
+function parseRoundSummary(tabValues) {
+  if (!tabValues || tabValues.length < 2) return [];
+  const headers = tabValues[0].map(h => String(h||'').toLowerCase().trim());
+  const cm = buildGenericColMap(headers);
+  const rounds = [];
+
+  for (let i = 1; i < tabValues.length; i++) {
+    const row = tabValues[i];
+    function g(keys) {
+      for (const k of keys) { const idx = cm[k]; if (idx !== undefined && idx < row.length && row[idx] !== '') return row[idx]; }
+      return null;
+    }
+    const d = dateStr(g(['date']));
+    if (!d) continue;
+    rounds.push({
+      date: d,
+      course: String(g(['course','course name']) || '').trim(),
+      gross: num(g(['gross','gross score'])),
+      net: num(g(['net','net score'])),
+      handicap: num(g(['handicap','hcp','index'])),
+      gir: num(g(['gir%','gir','greens in regulation %'])),
+      fir: num(g(['fir%','fir','fairways in regulation %'])),
+      penalties: num(g(['penalties','penalty'])),
+      putts: num(g(['putts','total putts'])),
+      putts3: num(g(['3 putts','3-putts','three putts'])),
+      avg_putt_dist: num(g(['avg putt dist','avg first putt','avg putt distance'])),
+      notes: String(g(['notes','note']) || '').trim(),
+    });
+  }
+  return rounds.sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function parseHoleByHole(tabValues) {
+  if (!tabValues || tabValues.length < 2) return [];
+  const headers = tabValues[0].map(h => String(h||'').toLowerCase().trim());
+  const cm = buildGenericColMap(headers);
+  const holes = [];
+
+  for (let i = 1; i < tabValues.length; i++) {
+    const row = tabValues[i];
+    function g(keys) {
+      for (const k of keys) { const idx = cm[k]; if (idx !== undefined && idx < row.length) return row[idx]; }
+      return null;
+    }
+    const d = dateStr(g(['date']));
+    const hnum = num(g(['hole']));
+    if (!d || hnum === null) continue;
+    holes.push({
+      date: d,
+      hole: hnum,
+      par: num(g(['par'])),
+      score: num(g(['score'])),
+      score_vs_par: num(g(['score vs par','vs par','score_vs_par','+/-'])),
+      club: String(g(['club']) || '').trim(),
+      putt_dist: num(g(['putt dist','putt distance','avg putt dist'])),
+      putts: num(g(['putts'])),
+      course: String(g(['course','course name']) || '').trim(),
+    });
+  }
+  return holes;
+}
+
+/* ════════════════════════════════════════════════
+   TAB CLASSIFICATION
+════════════════════════════════════════════════ */
+function classifyTab(title, values) {
+  const t = title.toLowerCase();
+  if (t === 'range sessions') return 'range';
+
+  if (!values || values.length < 1) return 'unknown';
+  const h = (values[0] || []).map(c => String(c||'').toLowerCase());
+  const has = (...keys) => keys.every(k => h.some(c => c.includes(k)));
+
+  if (has('gross') && (has('gir') || has('fir'))) return 'round_summary';
+  if (has('hole') && has('par') && has('score')) return 'hole_by_hole';
+  if (has('smash') || has('club path') || has('club_path')) return 'range';
+  if (has('equipment')) return 'club_map';
+  if (t.includes('average') || t.includes('avg')) return 'averages';
+  return 'unknown';
+}
+
+/* ════════════════════════════════════════════════
+   DATA FETCH
+════════════════════════════════════════════════ */
+let G = {}; // global parsed data
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error(`HTTP ${r.status}: ${txt.slice(0,200)}`);
+  }
+  return r.json();
+}
+
+async function init() {
+  // Check for placeholder API key
+  if (API_KEY === 'REPLACE_WITH_YOUR_SHEETS_API_KEY') {
+    document.getElementById('state-loading').style.display = 'none';
+    document.getElementById('apikey-warn').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('state-loading').style.display = 'flex';
+  document.getElementById('state-error').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('apikey-warn').style.display = 'none';
+
+  try {
+    const base = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
+    const meta = await fetchJSON(`${base}?fields=sheets.properties(title,sheetId)&key=${API_KEY}`);
+    const tabList = meta.sheets.map(s => s.properties.title);
+
+    const tabData = {};
+    await Promise.all(tabList.map(async title => {
+      const enc = encodeURIComponent(title);
+      const data = await fetchJSON(`${base}/values/${enc}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE&key=${API_KEY}`);
+      tabData[title] = data.values || [];
+    }));
+
+    // Classify tabs
+    let rangeSessions = [], roundSummary = [], holeByHole = [];
+    for (const [title, values] of Object.entries(tabData)) {
+      const kind = classifyTab(title, values);
+      if (kind === 'range') rangeSessions = [...rangeSessions, ...parseRangeSessions(values)];
+      else if (kind === 'round_summary') roundSummary = parseRoundSummary(values);
+      else if (kind === 'hole_by_hole') holeByHole = parseHoleByHole(values);
+      // averages tab: read but intentionally unused for stats (recomputed from solid set)
+    }
+
+    // If GIR in rounds is 0–100 (percentage), convert to fraction
+    roundSummary.forEach(r => {
+      if (r.gir !== null && r.gir > 1) r.gir = r.gir / 100;
+      if (r.fir !== null && r.fir > 1) r.fir = r.fir / 100;
+    });
+
+    // Join holes to rounds
+    roundSummary.forEach(r => {
+      r.holes = holeByHole.filter(h => h.date === r.date);
+    });
+
+    G.shots = rangeSessions;
+    G.rounds = roundSummary;
+    G.sessions = [...new Set(rangeSessions.map(s => s.date))].sort();
+    G.clubs = [...new Set(rangeSessions.map(s => s.club))].filter(Boolean).sort();
+
+    document.getElementById('state-loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    // Update subtitle
+    const lastRound = roundSummary.length ? roundSummary[roundSummary.length-1] : null;
+    const solidCount = solid(rangeSessions).length;
+    document.getElementById('dash-sub').textContent =
+      `${roundSummary.length} rounds logged · ${rangeSessions.length} range shots (${solidCount} solid) · Live from Google Sheets`;
+
+    buildScorecardTab();
+    buildRangeTab();
+
+  } catch(e) {
+    document.getElementById('state-loading').style.display = 'none';
+    document.getElementById('state-error').style.display = 'flex';
+    document.getElementById('err-msg-text').textContent = e.message || String(e);
+    console.error(e);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   TAB SWITCHING
+════════════════════════════════════════════════ */
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((b,i) => b.classList.toggle('active', ['scorecards','range'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  // Redraw canvases that need it
+  if (name === 'range') setTimeout(drawDispersion, 50);
+}
+
+/* ════════════════════════════════════════════════
+   SCORECARD TAB
+════════════════════════════════════════════════ */
+function buildScorecardTab() {
+  const rounds = G.rounds;
+  if (!rounds.length) {
+    document.getElementById('sc-insights').innerHTML = '<em>No scorecard data found in sheet.</em>';
+    document.getElementById('sc-stats').innerHTML = '<div class="no-data">No scorecard data logged yet</div>';
+    return;
+  }
+
+  buildSCInsights(rounds);
+  buildSCStats(rounds);
+  buildScoringTrend(rounds);
+  buildGIRFIR(rounds);
+  buildParTypeChart(rounds);
+  buildPenaltyChart(rounds);
+  buildPuttChart(rounds);
+  buildHeatmap(rounds);
+}
+
+function buildSCInsights(rounds) {
+  const last = rounds[rounds.length-1];
+  const avgGIR = avg(rounds.map(r => r.gir).filter(x => x !== null));
+  const avgFIR = avg(rounds.map(r => r.fir).filter(x => x !== null));
+  const avgPen = avg(rounds.map(r => r.penalties).filter(x => x !== null));
+  const bullets = [];
+
+  if (avgGIR !== null)
+    bullets.push(`GIR ${pct(avgGIR)} — approach is the <strong>primary scoring lever</strong> at a 22 handicap; each extra green in regulation saves ~0.8 shots on average.`);
+  if (last && last.gir !== null)
+    bullets.push(`Latest round: Gross ${last.gross ?? '—'}, GIR ${pct(last.gir)}, FIR ${pct(last.fir)}, ${last.penalties ?? '—'} penalties.`);
+  if (avgPen !== null && avgPen > 1.5)
+    bullets.push(`Penalties averaging ${rnd(avgPen,1)}/round — driver discipline is the <strong>most visible score leak</strong>.`);
+
+  const el = document.getElementById('sc-insights');
+  el.innerHTML = bullets.length
+    ? `<strong>Where to improve:</strong><ul>${bullets.map(b => `<li>${b}</li>`).join('')}</ul>`
+    : '<em>Not enough data for insights yet.</em>';
+}
+
+function statCard(label, value, delta='', deltaClass='neutral') {
+  return `<div class="stat-card">
+    <div class="label">${label}</div>
+    <div class="value">${value}</div>
+    ${delta ? `<div class="delta ${deltaClass}">${delta}</div>` : ''}
+  </div>`;
+}
+
+function buildSCStats(rounds) {
+  const last = rounds[rounds.length-1];
+  const prev = rounds.length > 1 ? rounds[rounds.length-2] : null;
+  const avgGross = avg(rounds.map(r => r.gross).filter(x => x !== null));
+  const avgPutts = avg(rounds.map(r => r.putts).filter(x => x !== null));
+  const avgGIR   = avg(rounds.map(r => r.gir).filter(x => x !== null));
+  const avgFIR   = avg(rounds.map(r => r.fir).filter(x => x !== null));
+  const avgPen   = avg(rounds.map(r => r.penalties).filter(x => x !== null));
+  const avg3putt = avg(rounds.map(r => r.putts3).filter(x => x !== null));
+
+  function grossDelta() {
+    if (!last || !prev || last.gross === null || prev.gross === null) return '';
+    const d = last.gross - prev.gross;
+    return (d < 0 ? '▼ ' : '▲ +') + Math.abs(d) + ' vs prev';
+  }
+  function grossDeltaClass() {
+    if (!last || !prev || last.gross === null || prev.gross === null) return 'neutral';
+    return last.gross < prev.gross ? 'up' : 'down';
+  }
+
+  const cards = [
+    statCard('Latest Gross', last?.gross ?? '—', grossDelta(), grossDeltaClass()),
+    statCard('Latest Net', last?.net ?? '—'),
+    statCard('Avg Gross', avgGross !== null ? rnd(avgGross,1) : '—'),
+    statCard('Avg GIR%', avgGIR !== null ? pct(avgGIR) : '—'),
+    statCard('Avg FIR%', avgFIR !== null ? pct(avgFIR) : '—'),
+    statCard('Avg Putts/Rnd', avgPutts !== null ? rnd(avgPutts,1) : '—'),
+    statCard('Avg 3-Putts', avg3putt !== null ? rnd(avg3putt,1) : '—'),
+    statCard('Avg Penalties', avgPen !== null ? rnd(avgPen,1) : '—'),
+  ];
+  document.getElementById('sc-stats').innerHTML = cards.join('');
+}
+
+function chartDefaults() {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#888', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#888', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+    }
+  };
+}
+
+function buildScoringTrend(rounds) {
+  if (!rounds.some(r => r.gross !== null)) {
+    document.getElementById('ch-scoring-trend').closest('.chart-box').querySelector('.chart-wrap').innerHTML = '<div class="no-data">No gross scores logged yet</div>';
+    return;
+  }
+  const labels = rounds.map(r => r.date.slice(5));
+  mkChart('ch-scoring-trend', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Gross', data: rounds.map(r => r.gross), borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.08)', tension: 0.3, pointRadius: 4 },
+        { label: 'Net',   data: rounds.map(r => r.net),   borderColor: '#4ade80', backgroundColor: 'rgba(74,222,128,0.08)',  tension: 0.3, pointRadius: 4 },
+        { label: 'Hdcp (22)', data: rounds.map(() => 22 + 72), borderColor: '#555', borderDash: [4,4], pointRadius: 0 },
+      ]
+    },
+    options: { ...chartDefaults(), plugins: { ...chartDefaults().plugins } }
+  });
+}
+
+function buildGIRFIR(rounds) {
+  const hasGIR = rounds.some(r => r.gir !== null);
+  const hasFIR = rounds.some(r => r.fir !== null);
+  if (!hasGIR && !hasFIR) {
+    document.getElementById('ch-girfir').closest('.chart-wrap').innerHTML = '<div class="no-data">GIR/FIR not logged yet</div>';
+    return;
+  }
+  const labels = rounds.map(r => r.date.slice(5));
+  const ds = [];
+  if (hasGIR) ds.push({ label: 'GIR%', data: rounds.map(r => r.gir !== null ? r.gir*100 : null), borderColor: '#60a5fa', tension: 0.3, pointRadius: 4, spanGaps: true });
+  if (hasFIR) ds.push({ label: 'FIR%', data: rounds.map(r => r.fir !== null ? r.fir*100 : null), borderColor: '#fbbf24', tension: 0.3, pointRadius: 4, spanGaps: true });
+  mkChart('ch-girfir', {
+    type: 'line',
+    data: { labels, datasets: ds },
+    options: { ...chartDefaults(), scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, min: 0, max: 100, ticks: { callback: v => v+'%', color: '#888', font:{size:11} } } } }
+  });
+}
+
+function buildParTypeChart(rounds) {
+  const allHoles = rounds.flatMap(r => r.holes || []);
+  if (!allHoles.length) {
+    document.getElementById('ch-par-type').closest('.chart-wrap').innerHTML = '<div class="no-data">Hole-by-hole data not logged yet</div>';
+    return;
+  }
+  const parTypes = [3,4,5];
+  const avgVsPar = parTypes.map(par => {
+    const h = allHoles.filter(h => h.par === par && h.score_vs_par !== null);
+    return h.length ? avg(h.map(x => x.score_vs_par)) : null;
+  });
+  const colors = avgVsPar.map(v => v === null ? '#555' : v > 1.5 ? '#f87171' : v > 0.5 ? '#fbbf24' : '#4ade80');
+  mkChart('ch-par-type', {
+    type: 'bar',
+    data: {
+      labels: ['Par 3','Par 4','Par 5'],
+      datasets: [{ label: 'Avg vs Par', data: avgVsPar, backgroundColor: colors }]
+    },
+    options: {
+      ...chartDefaults(),
+      plugins: { legend: { display: false } },
+      scales: { ...chartDefaults().scales, y: { ...chartDefaults().scales.y, title: { display: true, text: 'Avg strokes vs par', color: '#888', font:{size:11} } } }
+    }
+  });
+}
+
+function buildPenaltyChart(rounds) {
+  const allHoles = rounds.flatMap(r => r.holes || []);
+  // Try hole-level penalty detection (score >> par), or round-level by club if logged
+  // Fallback: just show penalties per round
+  const labels = rounds.map(r => r.date.slice(5));
+  const pens = rounds.map(r => r.penalties);
+  if (!pens.some(p => p !== null)) {
+    document.getElementById('ch-penalties').closest('.chart-wrap').innerHTML = '<div class="no-data">Penalty data not logged yet</div>';
+    return;
+  }
+  mkChart('ch-penalties', {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Penalties', data: pens, backgroundColor: 'rgba(248,113,113,0.6)' }] },
+    options: { ...chartDefaults(), plugins: { legend: { display: false } } }
+  });
+}
+
+function buildPuttChart(rounds) {
+  const hasPutts = rounds.some(r => r.putts !== null);
+  if (!hasPutts) {
+    document.getElementById('ch-putts').closest('.chart-wrap').innerHTML = '<div class="no-data">Putt data not logged yet</div>';
+    return;
+  }
+  const labels = rounds.map(r => r.date.slice(5));
+  const ds = [
+    { label: 'Putts/Round', data: rounds.map(r => r.putts), borderColor: '#a78bfa', tension: 0.3, pointRadius: 4 },
+  ];
+  if (rounds.some(r => r.putts3 !== null))
+    ds.push({ label: '3-Putts', data: rounds.map(r => r.putts3), borderColor: '#f87171', tension: 0.3, pointRadius: 4, yAxisID: 'y2' });
+
+  const opts = chartDefaults();
+  if (rounds.some(r => r.putts3 !== null)) {
+    opts.scales.y2 = { type: 'linear', position: 'right', ticks: { color: '#888', font:{size:11} }, grid: { drawOnChartArea: false } };
+  }
+  mkChart('ch-putts', { type: 'line', data: { labels, datasets: ds }, options: opts });
+}
+
+function buildHeatmap(rounds) {
+  const allHoles = rounds.flatMap(r => r.holes || []);
+  const el = document.getElementById('sc-heatmap');
+  if (!allHoles.length) {
+    el.innerHTML = '<div class="no-data">Hole-by-hole data not logged yet</div>';
+    return;
+  }
+  const holeNums = [...new Set(allHoles.map(h => h.hole))].sort((a,b) => a-b);
+  const dates   = rounds.filter(r => r.holes && r.holes.length).map(r => r.date);
+
+  let html = '<div class="table-wrap"><table class="heatmap"><thead><tr><th>Hole</th>';
+  dates.forEach(d => { html += `<th>${d.slice(5)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  holeNums.forEach(hn => {
+    const holeInfo = allHoles.find(h => h.hole === hn);
+    html += `<tr><td style="color:var(--muted)">H${hn}${holeInfo?.par ? ` (P${holeInfo.par})` : ''}</td>`;
+    dates.forEach(d => {
+      const h = allHoles.find(x => x.hole === hn && x.date === d);
+      if (!h || h.score_vs_par === null) { html += '<td style="color:var(--dim)">—</td>'; return; }
+      const v = h.score_vs_par;
+      const bg = v <= -1 ? 'rgba(74,222,128,0.3)' : v === 0 ? 'rgba(74,222,128,0.12)' : v === 1 ? 'rgba(251,191,36,0.25)' : v === 2 ? 'rgba(248,113,113,0.35)' : 'rgba(248,113,113,0.6)';
+      const label = v <= -1 ? 'B' : v === 0 ? 'E' : '+' + v;
+      html += `<td style="background:${bg}">${label}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+/* ════════════════════════════════════════════════
+   RANGE TAB
+════════════════════════════════════════════════ */
+let filteredShots = [];
+
+function buildRangeTab() {
+  const shots = G.shots;
+  if (!shots.length) {
+    document.getElementById('rng-insights').innerHTML = '<em>No range session data found in sheet.</em>';
+    return;
+  }
+
+  // Populate filter dropdowns
+  const sessEl = document.getElementById('f-session');
+  const clubEl = document.getElementById('f-club');
+  const f2pEl  = document.getElementById('f2p-club');
+  G.sessions.forEach(s => { sessEl.innerHTML += `<option>${s}</option>`; });
+  G.clubs.forEach(c => {
+    clubEl.innerHTML += `<option>${c}</option>`;
+    f2pEl.innerHTML  += `<option>${c}</option>`;
+  });
+
+  applyRangeFilters();
+}
+
+function applyRangeFilters() {
+  const sess  = document.getElementById('f-session').value;
+  const club  = document.getElementById('f-club').value;
+  const onlySolid = document.getElementById('f-solid').checked;
+
+  let shots = G.shots.filter(s => !hardDrop(s));
+  if (sess) shots = shots.filter(s => s.date === sess);
+  if (club) shots = shots.filter(s => s.club === club);
+  if (onlySolid) shots = shots.filter(isSolid);
+
+  filteredShots = shots;
+
+  buildRangeInsights();
+  buildPathTrend();
+  buildGapping();
+  drawDispersion();
+  buildF2PDist();
+  buildAoAScatter();
+  buildSmashChart();
+  buildRollingMedian();
+  buildShotLog();
+}
+
+function buildRangeInsights() {
+  const allSolid = solid(G.shots);
+  const sessions = G.sessions;
+  const bullets = [];
+
+  // Avg path last 3 sessions
+  if (sessions.length >= 1) {
+    const last3 = sessions.slice(-3);
+    const ironClubs = G.clubs.filter(c => c.toLowerCase().includes('iron') || c.toLowerCase().includes('wedge'));
+    const pathVals = last3.map(s => {
+      const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.club) && x.club_path !== null);
+      return ss.length ? avg(ss.map(x => x.club_path)) : null;
+    }).filter(v => v !== null);
+    const avgPath = avg(pathVals);
+    if (avgPath !== null) {
+      const dir = avgPath > 0 ? 'out-to-in (slice direction)' : 'in-to-out (draw direction)';
+      bullets.push(`Club path avg last ${pathVals.length} session(s): <strong>${rnd(avgPath,1)}°</strong> — ${dir}.${avgPath > 3 ? ' Still meaningfully positive — path work is the primary swing priority.' : avgPath > 0 ? ' Trending toward neutral — watch for sustained &lt;0° across sessions.' : ' Negative path — check for overcorrection (hook/pull risk).'}`);
+    }
+  }
+
+  // Face-to-path miss bias
+  const f2pVals = allSolid.filter(s => s.face_to_path !== null).map(s => s.face_to_path);
+  if (f2pVals.length > 5) {
+    const avgF2P = avg(f2pVals);
+    const dir = avgF2P < -2 ? 'open (slice spin)' : avgF2P > 2 ? 'closed (hook spin)' : 'near neutral';
+    bullets.push(`Face-to-path avg: <strong>${rnd(avgF2P,1)}°</strong> — face is ${dir}. ${avgF2P < -2 ? 'Confirms slice pattern: path AND face need to close.' : ''}`);
+  }
+
+  // Biggest carry gap
+  const gapClubs = ['Driver','3 Wood','4 Hybrid','5 Iron','6 Iron','7 Iron','8 Iron','9 Iron','Pitching Wedge','PW'];
+  const medians = gapClubs.map(c => {
+    const ss = allSolid.filter(s => s.club === c && s.carry !== null && s.carry > 30);
+    return { club: c, med: ss.length >= 3 ? perc(ss.map(s => s.carry), 50) : null };
+  }).filter(x => x.med !== null);
+  if (medians.length >= 2) {
+    let maxGap = 0, gapDesc = '';
+    for (let i = 0; i < medians.length - 1; i++) {
+      const gap = Math.abs(medians[i].med - medians[i+1].med);
+      if (gap > maxGap) { maxGap = gap; gapDesc = `${medians[i].club} (${rnd(medians[i].med,0)} yds) → ${medians[i+1].club} (${rnd(medians[i+1].med,0)} yds)`; }
+    }
+    if (maxGap > 20) bullets.push(`Largest carry gap: <strong>${rnd(maxGap,0)} yds</strong> between ${gapDesc}. Consider filling with a different loft or club selection adjustment.`);
+  }
+
+  document.getElementById('rng-insights').innerHTML = bullets.length
+    ? `<strong>Where to improve:</strong><ul>${bullets.map(b => `<li>${b}</li>`).join('')}</ul>`
+    : '<em>Not enough solid-contact data yet for insights.</em>';
+}
+
+function buildPathTrend() {
+  const allSolid = solid(G.shots);
+  const sessions = G.sessions;
+  const ironClubs = G.clubs.filter(c => c.toLowerCase().includes('iron') || c.toLowerCase().includes('wedge'));
+  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.club === c && s.club_path !== null).length >= 3);
+
+  const clubColors = ['#f87171','#fbbf24','#4ade80','#60a5fa','#a78bfa','#2dd4bf','#fb923c'];
+  const datasets = [];
+
+  // Overall irons avg
+  const overallPath = sessions.map(s => {
+    const ss = allSolid.filter(x => x.date === s && ironClubs.includes(x.club) && x.club_path !== null);
+    return ss.length ? avg(ss.map(x => x.club_path)) : null;
+  });
+  if (overallPath.some(v => v !== null))
+    datasets.push({ label: 'All Irons Avg', data: overallPath, borderColor: '#fff', borderWidth: 2, borderDash: [6,3], pointRadius: 5, tension: 0.3, spanGaps: true });
+
+  // Per-club lines
+  trackClubs.slice(0,6).forEach((club, i) => {
+    const data = sessions.map(s => {
+      const ss = allSolid.filter(x => x.date === s && x.club === club && x.club_path !== null);
+      return ss.length ? avg(ss.map(x => x.club_path)) : null;
+    });
+    if (data.some(v => v !== null))
+      datasets.push({ label: club, data, borderColor: clubColors[i % clubColors.length], tension: 0.3, pointRadius: 4, spanGaps: true });
+  });
+
+  if (!datasets.length) {
+    document.getElementById('ch-path-trend').closest('.chart-wrap').innerHTML = '<div class="no-data">No path data yet</div>';
+    return;
+  }
+
+  mkChart('ch-path-trend', {
+    type: 'line',
+    data: { labels: sessions.map(s => s.slice(5)), datasets },
+    options: {
+      ...chartDefaults(),
+      scales: {
+        x: { ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: {
+          ticks: { color: '#888', font:{size:11}, callback: v => v + '°' },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          title: { display: true, text: 'Club Path° (+ve = out-to-in, LH slice)', color: '#888', font:{size:11} }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: '#888', font:{size:11} } },
+        annotation: { annotations: { zero: { type: 'line', yMin: 0, yMax: 0, borderColor: 'rgba(74,222,128,0.4)', borderWidth: 1 } } }
+      }
+    }
+  });
+}
+
+function buildGapping() {
+  const allSolid = solid(G.shots);
+  const gapOrder = ['Driver','3 Wood','4 Hybrid','5 Iron','6 Iron','7 Iron','8 Iron','9 Iron','Pitching Wedge','PW'];
+  const present = gapOrder.filter(c => G.clubs.includes(c));
+  const extra   = G.clubs.filter(c => !gapOrder.includes(c));
+  const clubs   = [...present, ...extra];
+
+  const iqrData = [], medData = [], p10Data = [], p90Data = [], labels = [];
+  clubs.forEach(club => {
+    const ss = allSolid.filter(s => s.club === club && s.carry !== null && s.carry > 30);
+    if (ss.length < 3) return;
+    const carries = ss.map(s => s.carry).sort((a,b) => a-b);
+    labels.push(club.replace(' Iron',' I').replace(' Wood',' W').replace('Pitching Wedge','PW'));
+    iqrData.push([perc(carries,25), perc(carries,75)]);
+    medData.push([perc(carries,50)-0.8, perc(carries,50)+0.8]);
+    p10Data.push(perc(carries,10));
+    p90Data.push(perc(carries,90));
+  });
+
+  if (!labels.length) {
+    document.getElementById('ch-gapping').closest('.chart-wrap').innerHTML = '<div class="no-data">Need ≥3 solid shots per club for gapping</div>';
+    return;
+  }
+
+  mkChart('ch-gapping', {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'IQR p25–p75', data: iqrData, backgroundColor: 'rgba(96,165,250,0.35)', borderColor: 'rgba(96,165,250,0.7)', borderWidth: 1 },
+        { label: 'Median',      data: medData, backgroundColor: 'rgba(96,165,250,0.9)', borderSkipped: false },
+      ]
+    },
+    options: {
+      ...chartDefaults(),
+      plugins: { legend: { labels: { color: '#888', font:{size:11} } } },
+      scales: {
+        x: { ticks: { color: '#888', font:{size:10} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888', font:{size:11}, callback: v => v+' yds' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+/* ── DISPERSION CANVAS (LH-correct) ── */
+function drawDispersion() {
+  const canvas = document.getElementById('dispCanvas');
+  if (!canvas) return;
+  const shots = filteredShots.filter(s => s.carry !== null && s.carry_dev !== null && s.carry > 30);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 600;
+  const H = 300;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  if (!shots.length) {
+    ctx.fillStyle = '#555'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('No dispersion data for current filter', W/2, H/2);
+    return;
+  }
+
+  const maxDev   = Math.max(40, ...shots.map(s => Math.abs(s.carry_dev)));
+  const maxCarry = Math.max(50, ...shots.map(s => s.carry));
+  const minCarry = Math.min(...shots.map(s => s.carry));
+  const mg = { top: 28, bottom: 40, left: 52, right: 24 };
+  const pw = W - mg.left - mg.right;
+  const ph = H - mg.top - mg.bottom;
+
+  // LH flip: negative carryDev (left/slice) → positive x position → shown on RIGHT
+  function toX(dev) { return mg.left + pw/2 + (-dev / maxDev) * (pw/2 * 0.9); }
+  function toY(carry) { return mg.top + ph - ((carry - minCarry*0.9) / (maxCarry * 1.1 - minCarry*0.9)) * ph; }
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  [-maxDev*0.66, -maxDev*0.33, 0, maxDev*0.33, maxDev*0.66].forEach(d => {
+    ctx.beginPath(); ctx.moveTo(toX(d), mg.top); ctx.lineTo(toX(d), H-mg.bottom); ctx.stroke();
+  });
+
+  // Target line
+  ctx.strokeStyle = 'rgba(74,222,128,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(toX(0), mg.top); ctx.lineTo(toX(0), H-mg.bottom); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Labels: axis titles
+  ctx.fillStyle = '#555'; ctx.font = '10px system-ui';
+  ctx.textAlign = 'right'; ctx.fillText('← Push', mg.left + pw*0.1, H-mg.bottom+18);
+  ctx.textAlign = 'left';  ctx.fillText('Slice/Pull →', mg.left + pw*0.65, H-mg.bottom+18);
+  ctx.textAlign = 'center'; ctx.fillText('Target', toX(0), mg.top - 8);
+
+  // Y-axis ticks
+  ctx.fillStyle = '#555'; ctx.font = '10px system-ui';
+  [Math.round(minCarry/10)*10, Math.round((minCarry + maxCarry)/20)*10, Math.round(maxCarry/10)*10].forEach(c => {
+    const y = toY(c);
+    ctx.textAlign = 'right'; ctx.fillText(c + 'y', mg.left - 4, y + 3);
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.beginPath(); ctx.moveTo(mg.left, y); ctx.lineTo(W-mg.right, y); ctx.stroke();
+  });
+
+  // Club colors
+  const sessionColors = ['#60a5fa','#a78bfa','#fbbf24','#4ade80','#f87171','#2dd4bf','#fb923c'];
+  const sessionList = [...new Set(shots.map(s => s.date))].sort();
+  const clubList    = [...new Set(shots.map(s => s.club))].sort();
+
+  // Shots
+  shots.forEach(s => {
+    const x = toX(s.carry_dev);
+    const y = toY(s.carry);
+    const col = CLUB_COLORS[s.club] || '#888';
+    ctx.globalAlpha = isSolid(s) ? 0.8 : 0.3;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(x, y, isSolid(s) ? 4 : 2.5, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Avg cross
+  const solidShots = shots.filter(isSolid);
+  if (solidShots.length) {
+    const ax = toX(avg(solidShots.map(s => s.carry_dev)));
+    const ay = toY(avg(solidShots.map(s => s.carry)));
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax-7, ay); ctx.lineTo(ax+7, ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ax, ay-7); ctx.lineTo(ax, ay+7); ctx.stroke();
+  }
+}
+
+/* ── FACE-TO-PATH DISTRIBUTION ── */
+function buildF2PDist() {
+  const selClub = document.getElementById('f2p-club').value;
+  let shots = solid(G.shots).filter(s => s.face_to_path !== null);
+  if (selClub) shots = shots.filter(s => s.club === selClub);
+
+  if (!shots.length) {
+    destroyChart('ch-f2p');
+    document.getElementById('ch-f2p').closest('.chart-wrap').innerHTML = '<div class="no-data">No F2P data for selection</div>';
+    return;
+  }
+
+  const bins = [-20,-15,-10,-7,-4,-1,2,5,8,12,16,20];
+  const counts = new Array(bins.length-1).fill(0);
+  shots.forEach(s => {
+    for (let i = 0; i < bins.length-1; i++) {
+      if (s.face_to_path >= bins[i] && s.face_to_path < bins[i+1]) { counts[i]++; break; }
+    }
+  });
+  const labels = bins.slice(0,-1).map((v,i) => `${v}° to ${bins[i+1]}°`);
+  const colors = bins.slice(0,-1).map((v,i) => {
+    const mid = (v + bins[i+1]) / 2;
+    return mid < -3 ? 'rgba(248,113,113,0.7)' : mid > 3 ? 'rgba(251,191,36,0.7)' : 'rgba(74,222,128,0.7)';
+  });
+
+  mkChart('ch-f2p', {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Shots', data: counts, backgroundColor: colors }] },
+    options: {
+      ...chartDefaults(),
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888', font:{size:10} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      }
+    }
+  });
+}
+
+function buildAoAScatter() {
+  const shots = solid(G.shots).filter(s => s.attack_angle !== null && s.club_path !== null);
+  if (shots.length < 3) {
+    document.getElementById('ch-aoa-scatter').closest('.chart-wrap').innerHTML = '<div class="no-data">Need more data for AoA scatter</div>';
+    return;
+  }
+  const clubs = [...new Set(shots.map(s => s.club))];
+  const clubColors2 = ['#f87171','#fbbf24','#4ade80','#60a5fa','#a78bfa','#2dd4bf','#fb923c'];
+  const datasets = clubs.map((c, i) => ({
+    label: c,
+    data: shots.filter(s => s.club === c).map(s => ({ x: s.attack_angle, y: s.club_path })),
+    backgroundColor: mkColor(Object.values(CLUB_COLORS)[i % 9] || '#888', 0.6),
+    pointRadius: 4,
+  }));
+
+  mkChart('ch-aoa-scatter', {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      ...chartDefaults(),
+      scales: {
+        x: { title: { display: true, text: 'Attack Angle°', color: '#888', font:{size:11} }, ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { title: { display: true, text: 'Club Path° (+ve = out-to-in)', color: '#888', font:{size:11} }, ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      }
+    }
+  });
+}
+
+function buildSmashChart() {
+  const allShots = G.shots.filter(s => s.smash !== null && s.smash > 0.6 && s.smash < 1.6);
+  const clubs = G.clubs.filter(c => allShots.some(s => s.club === c));
+  if (!clubs.length) return;
+
+  const avgSmash  = clubs.map(c => avg(allShots.filter(s => s.club === c).map(s => s.smash)));
+  const solidPct  = clubs.map(c => {
+    const ss = allShots.filter(s => s.club === c);
+    return ss.length ? solid(ss).length / ss.length * 100 : 0;
+  });
+
+  mkChart('ch-smash', {
+    type: 'bar',
+    data: {
+      labels: clubs.map(c => c.replace(' Iron',' I').replace('Pitching Wedge','PW')),
+      datasets: [
+        { label: 'Avg Smash', data: avgSmash, backgroundColor: clubs.map(c => clubColor(c, 0.6)), yAxisID: 'y' },
+        { label: 'Solid %',   data: solidPct,  type: 'line', borderColor: '#fff', pointRadius: 4, tension: 0.3, yAxisID: 'y2' },
+      ]
+    },
+    options: {
+      ...chartDefaults(),
+      scales: {
+        x: { ticks: { color: '#888', font:{size:10} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { position: 'left', ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'Avg Smash', color: '#888', font:{size:11} }, min: 1.0, max: 1.5 },
+        y2: { position: 'right', ticks: { color: '#888', font:{size:11}, callback: v => v+'%' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Solid %', color: '#888', font:{size:11} } },
+      }
+    }
+  });
+}
+
+function buildRollingMedian() {
+  const allSolid = solid(G.shots);
+  const sessions = G.sessions;
+  const trackClubs = G.clubs.filter(c => allSolid.filter(s => s.club === c && s.carry !== null).length >= 4);
+
+  if (!trackClubs.length || sessions.length < 2) {
+    document.getElementById('ch-rolling').closest('.chart-wrap').innerHTML = '<div class="no-data">Need ≥4 solid shots per club across ≥2 sessions</div>';
+    return;
+  }
+
+  const clubColors2 = ['#f87171','#fbbf24','#4ade80','#60a5fa','#a78bfa','#2dd4bf'];
+  const datasets = trackClubs.slice(0,6).map((club, i) => {
+    const data = sessions.map((s, si) => {
+      const window4 = sessions.slice(Math.max(0, si-3), si+1);
+      const ss = allSolid.filter(x => window4.includes(x.date) && x.club === club && x.carry !== null && x.carry > 30);
+      return ss.length ? perc(ss.map(x => x.carry), 50) : null;
+    });
+    return { label: club, data, borderColor: clubColors2[i % 6], tension: 0.3, pointRadius: 4, spanGaps: true };
+  });
+
+  mkChart('ch-rolling', {
+    type: 'line',
+    data: { labels: sessions.map(s => s.slice(5)), datasets },
+    options: {
+      ...chartDefaults(),
+      scales: {
+        x: { ticks: { color: '#888', font:{size:11} }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888', font:{size:11}, callback: v => v+' yds' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+function buildShotLog() {
+  const tbody = document.getElementById('shot-log-body');
+  const shots = filteredShots.slice(0, 200);
+  if (!shots.length) { tbody.innerHTML = '<tr><td colspan="9" style="color:var(--dim);padding:20px;text-align:center">No shots match filter</td></tr>'; return; }
+
+  tbody.innerHTML = shots.map(s => {
+    const pathCol = s.club_path === null ? '#555' : s.club_path > 5 ? '#f87171' : s.club_path > 2 ? '#fbbf24' : '#4ade80';
+    const devCol  = s.carry_dev === null ? '#555' : s.carry_dev < -10 ? '#f87171' : s.carry_dev < -3 ? '#fbbf24' : '#4ade80';
+    const tag     = isSolid(s) ? '<span class="tag tag-ok">solid</span>' : '<span class="tag tag-miss">mishit</span>';
+    return `<tr>
+      <td>${s.date}</td>
+      <td>${s.club}</td>
+      <td>${rnd(s.smash,2)}</td>
+      <td style="color:${pathCol}">${rnd(s.club_path,1)}</td>
+      <td>${rnd(s.face_to_path,1)}</td>
+      <td>${rnd(s.spin_axis,0)}</td>
+      <td>${rnd(s.carry,0)}</td>
+      <td style="color:${devCol}">${rnd(s.carry_dev,1)}</td>
+      <td>${tag} ${s.data_quality || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════════════
+   BOOT
+════════════════════════════════════════════════ */
+init();
+</script>
+</body>
+</html>
