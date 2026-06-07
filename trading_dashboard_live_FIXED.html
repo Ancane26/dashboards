@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto Trading — Live Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --accent:#00c896; --negative:#ff4d4d; --header-bg:#0f1923; --card-bg:#1a2332;
+    --text:#e8edf3; --text-muted:#8b97a8; --border:rgba(255,255,255,.08); --radius:10px; --gap:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:var(--text);min-height:100vh;padding:20px}
+  .header{background:var(--header-bg);border-radius:var(--radius);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--gap);flex-wrap:wrap;gap:12px}
+  .header h1{font-size:18px;font-weight:600;color:#fff}
+  .header-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .status{display:flex;align-items:center;gap:6px;font-size:12px;color:rgba(255,255,255,.7)}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  .status-dot.error{background:var(--negative);animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .refresh-controls{display:flex;align-items:center;gap:8px}
+  .refresh-controls select,.refresh-controls input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 8px;border-radius:4px;font-size:12px}
+  .refresh-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer}
+  .refresh-btn:hover{background:rgba(255,255,255,.2)}
+  .refresh-bar-container{height:3px;background:rgba(255,255,255,.1);border-radius:2px;margin-bottom:var(--gap);overflow:hidden}
+  .refresh-bar{height:100%;background:var(--accent);width:100%;transform-origin:left;transition:transform linear}
+  .tabs{display:flex;gap:8px;margin-bottom:var(--gap)}
+  .tab-btn{background:var(--card-bg);border:1px solid var(--border);color:var(--text-muted);padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600}
+  .tab-btn.active{color:#fff;border-color:var(--accent);background:rgba(0,200,150,.12)}
+  .view{display:none}
+  .view.active{display:block}
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+  .kpi-card{background:var(--card-bg);border-radius:var(--radius);padding:16px 20px;border:1px solid var(--border)}
+  .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px}
+  .kpi-value{font-size:24px;font-weight:700}
+  .kpi-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+  .pos{color:var(--accent)} .neg{color:var(--negative)}
+  .chart-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+  .card{background:var(--card-bg);border-radius:var(--radius);padding:18px 22px;border:1px solid var(--border)}
+  .card h3{font-size:12px;font-weight:700;margin-bottom:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px}
+  .card canvas{max-height:280px}
+  .filter-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:var(--gap)}
+  .filter-bar label{font-size:12px;color:var(--text-muted)}
+  .filter-bar select{background:var(--card-bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;white-space:nowrap}
+  thead th:hover{color:var(--text)}
+  tbody td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody tr:hover{background:rgba(255,255,255,.03)}
+  .table-card{overflow-x:auto}
+  .pagination{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;color:var(--text-muted)}
+  .pagination button{background:var(--card-bg);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px}
+  .pagination button:disabled{opacity:.4;cursor:default}
+  .footer{text-align:center;font-size:11px;color:var(--text-muted);margin-top:20px}
+  .error-banner{background:rgba(255,77,77,.1);border:1px solid var(--negative);color:var(--negative);padding:10px 16px;border-radius:6px;font-size:13px;margin-bottom:var(--gap);display:none}
+  .section-title{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);margin:6px 0 4px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .pill.s{background:rgba(255,77,77,.18);color:#ff8a8a}
+  .pill.a{background:rgba(255,193,7,.18);color:#ffd25c}
+  .pill.b{background:rgba(0,200,150,.18);color:#5cffce}
+  @media (max-width:600px){.kpi-row{grid-template-columns:repeat(2,1fr)}.chart-row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Auto Trading — Live Dashboard</h1>
+  <div class="header-meta">
+    <div class="status"><div class="status-dot" id="statusDot"></div><span id="statusText">Loading…</span></div>
+    <div class="refresh-controls">
+      <label style="color:rgba(255,255,255,.6);font-size:12px">Refresh:</label>
+      <select id="refreshSelect" onchange="setRefreshInterval(this.value)">
+        <option value="0">Off</option>
+        <option value="30">30s</option>
+        <option value="60" selected>1m</option>
+        <option value="300">5m</option>
+        <option value="900">15m</option>
+      </select>
+      <button class="refresh-btn" onclick="fetchAll()">↻ Now</button>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-bar-container"><div class="refresh-bar" id="refreshBar"></div></div>
+<div class="error-banner" id="errorBanner"></div>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tabBtn-trades" onclick="showView('trades')">📒 Trades Log</button>
+  <button class="tab-btn" id="tabBtn-dash" onclick="showView('dash')">📊 Market Dashboard</button>
+</div>
+
+<!-- ===================== TRADES LOG VIEW ===================== -->
+<div class="view active" id="view-trades">
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="filter-bar">
+    <label>Rank</label>
+    <select id="filterRank" data-filter-col="Rank"><option value="">All</option></select>
+    <label>Gate</label>
+    <select id="filterGate" data-filter-col="Gate"><option value="">All</option></select>
+    <label>Status</label>
+    <select id="filterStatus" data-filter-col="Status"><option value="">All</option></select>
+    <label>Setup</label>
+    <select id="filterSetup" data-filter-col="Setup"><option value="">All</option></select>
+  </div>
+
+  <div class="chart-row">
+    <div class="card"><h3>Score Over Time</h3><canvas id="mainChart"></canvas></div>
+    <div class="card"><h3>Cumulative R (Closed Trades — Equity Curve)</h3><canvas id="equityChart"></canvas></div>
+  </div>
+  <div class="chart-row">
+    <div class="card"><h3>Setup Performance — Win Rate &amp; Expectancy (closed trades)</h3><canvas id="categoryChart"></canvas></div>
+  </div>
+
+  <div class="card table-card">
+    <h3>Trade Ledger — <span id="rowCount">—</span> rows</h3>
+    <table id="dataTable"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+    <div class="pagination">
+      <span id="pageInfo">—</span>
+      <div style="display:flex;gap:8px"><button id="prevBtn" onclick="changePage(-1)">← Prev</button><button id="nextBtn" onclick="changePage(1)">Next →</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MARKET DASHBOARD VIEW ===================== -->
+<div class="view" id="view-dash">
+  <div class="kpi-row" id="dashKpiRow"></div>
+  <div class="chart-row">
+    <div class="card" style="grid-column: span 2">
+      <h3>Sector Relative Rotation — RRG (vs SPY)</h3>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
+        X = relative strength (21D vs SPY) &nbsp;·&nbsp; Y = momentum (5D vs SPY, i.e. trend in relative strength)
+        &nbsp;·&nbsp; <span style="color:#00c896">●</span> Leading &nbsp; <span style="color:#f5a623">●</span> Weakening &nbsp; <span style="color:#ff4d4d">●</span> Lagging &nbsp; <span style="color:#5b9bd5">●</span> Improving
+      </div>
+      <canvas id="rrgChart" height="100"></canvas>
+    </div>
+  </div>
+  <div class="chart-row">
+    <div class="card"><h3>Top 20 — 5D vs Sector</h3><canvas id="top20Chart"></canvas></div>
+    <div class="card"><h3>Sectors — Ranked Score (vs SPY)</h3><canvas id="sectorChart"></canvas></div>
+  </div>
+  <div class="chart-row">
+    <div class="card table-card"><h3 id="macroTitle">Macro / Defensive</h3><table id="macroTable"><thead></thead><tbody></tbody></table></div>
+    <div class="card table-card"><h3 id="hardAssetsTitle">Hard Assets &amp; Digital Base Layers</h3><table id="hardAssetsTable"><thead></thead><tbody></tbody></table></div>
+  </div>
+  <div class="card table-card">
+    <h3 id="sectorsTitle">Sectors vs SPY</h3>
+    <table id="sectorsTable"><thead></thead><tbody></tbody></table>
+  </div>
+  <div class="card table-card">
+    <h3 id="top20Title">Top 20</h3>
+    <table id="top20Table"><thead></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<div class="footer">
+  Last updated: <span id="lastUpdated">—</span> ·
+  Trades log: <a href="https://docs.google.com/spreadsheets/d/1dVVmz67h64BwcZIFAmJfFnmr6UvcbsdO7C3yNsaWWnE" target="_blank" style="color:var(--accent)">sheet</a> ·
+  Trading Dashboard: <a href="https://docs.google.com/spreadsheets/d/1vFrjW8jcPuM8tGoEUM1VzJcO7bcEbmRfVCAFbB-MSpQ" target="_blank" style="color:var(--accent)">sheet</a>
+</div>
+
+<script>
+// ── CONFIG — fill in your API key ────────────────────────────────────────────
+const API_KEY = "AIzaSyAyaRFYoYFo2hYZ4Kde11P_sUB2Y0CUgD0";
+
+const TRADES_SHEET_ID = "1dVVmz67h64BwcZIFAmJfFnmr6UvcbsdO7C3yNsaWWnE";
+const TRADES_TAB      = "Sheet1";
+const TRADES_RANGE    = `${TRADES_TAB}!A1:Q5000`;
+
+const DASH_SHEET_ID   = "1vFrjW8jcPuM8tGoEUM1VzJcO7bcEbmRfVCAFbB-MSpQ";
+const DASH_TAB        = "Dashboard";
+// Ranges per project documentation
+const DASH_RANGES = {
+  macro:       `${DASH_TAB}!A2:H12`,
+  hardAssets:  `${DASH_TAB}!A15:H20`,
+  sectors:     `${DASH_TAB}!A23:H60`,
+  top20:       `${DASH_TAB}!J23:R43`,
+};
+
+let REFRESH_SEC = 60;
+const PAGE_SIZE = 50;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allTrades = [], filteredTrades = [];
+let dashData = {};
+let charts = {};
+let refreshTimer = null;
+let currentPage = 0;
+let sortCol = null, sortAsc = false;
+let activeFilters = {};
+
+// ── Sheets API fetch helper ───────────────────────────────────────────────────
+async function fetchRange(sheetId, range){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
+  const res = await fetch(url);
+  if(!res.ok){
+    const body = await res.text().catch(()=> "");
+    throw new Error(`HTTP ${res.status} on ${range} — ${body.slice(0,160)}`);
+  }
+  const json = await res.json();
+  return json.values || [];
+}
+
+// rows -> array of objects keyed by header row
+function rowsToObjects(rows){
+  if(!rows.length) return [];
+  const headers = rows[0].map(h => String(h).trim());
+  return rows.slice(1).map(r => {
+    const o = {};
+    headers.forEach((h,i) => o[h] = r[i] !== undefined ? r[i] : null);
+    return o;
+  }).filter(o => Object.values(o).some(v => v !== null && v !== ""));
+}
+
+// ── Master fetch ──────────────────────────────────────────────────────────────
+async function fetchAll(){
+  setStatus('fetching');
+  try{
+    if(API_KEY.startsWith("PASTE_")) throw new Error("No API key set — paste your Google Sheets API key into the API_KEY constant near the top of the <script>.");
+
+    const [tradesRows, macroRows, hardRows, sectorRows, top20Rows] = await Promise.all([
+      fetchRange(TRADES_SHEET_ID, TRADES_RANGE),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.macro),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.hardAssets),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.sectors),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.top20),
+    ]);
+
+    allTrades = rowsToObjects(tradesRows);
+    dashData = {
+      macro: { rows: macroRows },
+      hardAssets: { rows: hardRows },
+      sectors: { rows: sectorRows },
+      top20: { rows: top20Rows },
+    };
+
+    hideError();
+    setStatus('live');
+    document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+    populateFilterOptions();
+    applyFilters();
+    renderDashboardView();
+  }catch(err){
+    setStatus('error');
+    showError(`Could not load data: ${err.message}`);
+    console.error(err);
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showView(name){
+  ['trades','dash'].forEach(n=>{
+    document.getElementById(`view-${n}`).classList.toggle('active', n===name);
+    document.getElementById(`tabBtn-${n==='trades'?'trades':'dash'}`).classList.toggle('active', n===name);
+  });
+}
+
+// ── Filters (Trades) ──────────────────────────────────────────────────────────
+function populateFilterOptions(){
+  document.querySelectorAll('[data-filter-col]').forEach(sel=>{
+    const col = sel.dataset.filterCol;
+    const vals = [...new Set(allTrades.map(r=>r[col]).filter(v=>v!==null && v!==""))].sort();
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + vals.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.value = current;
+  });
+}
+document.querySelectorAll('[data-filter-col]').forEach(el=>{
+  el.addEventListener('change', ()=>{ activeFilters[el.dataset.filterCol] = el.value; applyFilters(); });
+});
+
+function applyFilters(){
+  filteredTrades = allTrades.filter(row=>
+    Object.entries(activeFilters).every(([col,val]) => !val || String(row[col]) === val)
+  );
+  currentPage = 0;
+  renderKPIs();
+  renderTradeCharts();
+  renderTradeTable();
+}
+
+// ── KPIs (Trades) ─────────────────────────────────────────────────────────────
+const NUMERIC_COLS = new Set(['Score','Signal Price','Target Price','Stop Price','Entry Price','Exit Price','Qty','P&L','PnL']);
+function num(v, col){
+  const n = parseFloat(String(v).replace(/[$,%]/g,''));
+  return isNaN(n) ? null : n;
+}
+
+// R-multiple per trade: risk = |entry-stop|; win = |target-entry|/risk; loss = -1R
+function tradeR(row){
+  const status = (row['Status']||'').toUpperCase();
+  const sig = num(row['Signal Price'],'Signal Price'), tgt = num(row['Target Price'],'Target Price'), stp = num(row['Stop Price'],'Stop Price');
+  if(sig===null || stp===null) return null;
+  const risk = Math.abs(sig - stp);
+  if(!risk) return null;
+  if(status.includes('TP_HIT') && tgt!==null) return Math.abs(tgt - sig) / risk;
+  if(status.includes('SL_HIT')) return -1;
+  return null;
+}
+
+function computeExpectancy(trades){
+  const closed = trades.map(tradeR).filter(v=>v!==null);
+  if(!closed.length) return null;
+  const wins = closed.filter(r=>r>0), losses = closed.filter(r=>r<=0);
+  const winRate = wins.length/closed.length;
+  const avgWinR = wins.length ? wins.reduce((a,b)=>a+b,0)/wins.length : 0;
+  const avgLossR = losses.length ? losses.reduce((a,b)=>a+b,0)/losses.length : 0;
+  const expectancy = winRate*avgWinR + (1-winRate)*avgLossR;
+  return { expectancy, avgWinR, avgLossR, winRate, n: closed.length };
+}
+
+function renderKPIs(){
+  const total = filteredTrades.length;
+  const closed = filteredTrades.filter(r => /TP_HIT|SL_HIT/i.test(r['Status']||''));
+  const wins = closed.filter(r => /TP_HIT/i.test(r['Status']||''));
+  const winRate = closed.length ? (wins.length/closed.length*100) : null;
+  const scores = filteredTrades.map(r=>num(r['Score'],'Score')).filter(v=>v!==null);
+  const avgScore = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : null;
+  const sTier = filteredTrades.filter(r => /S-TIER/i.test(r['Rank']||'')).length;
+  const exp = computeExpectancy(filteredTrades);
+
+  // Win rate alone is misleading on a 2:1 R:R system (breakeven WR ≈ 33%). Color by expectancy sign, not an arbitrary 50% line.
+  const winRateCls = exp ? (exp.expectancy > 0 ? 'pos' : 'neg') : '';
+  const breakeven = exp && exp.avgWinR ? (100/(1+exp.avgWinR)) : null;
+
+  const cards = [
+    { label:'Expectancy (Avg R)', value: exp===null?'—':`${exp.expectancy>=0?'+':''}${exp.expectancy.toFixed(2)}R`,
+      sub: exp===null?'no closed trades':`per trade · ${exp.n} closed`, cls: exp===null?'':(exp.expectancy>0?'pos':'neg') },
+    { label:'Win Rate (closed)', value: winRate===null?'—':`${winRate.toFixed(1)}%`,
+      sub: breakeven===null?`${wins.length}W / ${closed.length-wins.length}L`:`${wins.length}W / ${closed.length-wins.length}L · breakeven ≈ ${breakeven.toFixed(0)}% at this avg R:R`,
+      cls: winRateCls },
+    { label:'Avg Score', value: avgScore===null?'—':avgScore.toFixed(1), sub:'composite 0–100' },
+    { label:'S-Tier Signals', value: sTier.toLocaleString(), sub:`of ${total} total` },
+  ];
+  document.getElementById('kpiRow').innerHTML = cards.map(c=>`
+    <div class="kpi-card">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value ${c.cls||''}">${c.value}</div>
+      <div class="kpi-sub">${c.sub}</div>
+    </div>`).join('');
+}
+
+// ── Charts (Trades) ───────────────────────────────────────────────────────────
+function parseTime(v){
+  if(!v) return null;
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+
+function renderTradeCharts(){
+  const sorted = [...filteredTrades]
+    .map(r=>({...r, _t: parseTime(r['Time'])}))
+    .filter(r=>r._t)
+    .sort((a,b)=>a._t-b._t);
+
+  const labels = sorted.map(r=>r._t.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}));
+  const scores = sorted.map(r=>num(r['Score'],'Score') ?? 0);
+
+  // Chart 1: Score over time alone — bounded 0-100, reads cleanly without a second incompatible scale.
+  if(charts.main) charts.main.destroy();
+  charts.main = new Chart(document.getElementById('mainChart'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Score', data:scores, borderColor:'#00c896', backgroundColor:'#00c89630', borderWidth:2, fill:true, tension:.25, pointRadius: sorted.length>60?0:2 },
+    ]},
+    options:{ responsive:true, animation:false, interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ ticks:{maxTicksLimit:8,color:'#8b97a8'}, grid:{color:'rgba(255,255,255,.05)'} },
+        y:{ min:0, max:100, ticks:{color:'#8b97a8'}, grid:{color:'rgba(255,255,255,.05)'}, title:{display:true,text:'Composite Score (0–100)',color:'#8b97a8'} },
+      } } });
+
+  // Chart 2: Cumulative R equity curve (closed trades only) — the standard way to view system performance over time.
+  const closedSorted = sorted.filter(r => /TP_HIT|SL_HIT/i.test(r['Status']||''));
+  let cumR = 0;
+  const rLabels = [], rSeries = [];
+  closedSorted.forEach(r=>{
+    const rMult = tradeR(r);
+    if(rMult===null) return;
+    cumR += rMult;
+    rLabels.push(r._t.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}));
+    rSeries.push(cumR);
+  });
+  if(charts.equity) charts.equity.destroy();
+  charts.equity = new Chart(document.getElementById('equityChart'), {
+    type:'line',
+    data:{ labels:rLabels, datasets:[
+      { label:'Cumulative R', data:rSeries, borderColor: cumR>=0?'#00c896':'#ff4d4d', backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:.15 },
+    ]},
+    options:{ responsive:true, animation:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ ticks:{maxTicksLimit:6,color:'#8b97a8'}, grid:{color:'rgba(255,255,255,.05)'} },
+        y:{ ticks:{color:'#8b97a8', callback:(v)=>`${v}R`}, grid:{color:'rgba(255,255,255,.05)'}, title:{display:true,text:'Cumulative R-multiple',color:'#8b97a8'} },
+      } } });
+
+  // Setup performance — win rate & expectancy per setup. Raw trade counts don't say which setup is *working*; this does.
+  const bySetup = {};
+  filteredTrades.forEach(r=>{
+    const k = r['Setup']||'Other';
+    if(!bySetup[k]) bySetup[k] = [];
+    bySetup[k].push(r);
+  });
+  const setupStats = Object.entries(bySetup).map(([setup, rows])=>{
+    const e = computeExpectancy(rows);
+    return { setup, n: rows.length, closed: e?e.n:0, winRate: e?e.winRate*100:null, expectancy: e?e.expectancy:null };
+  }).filter(s=>s.closed>0).sort((a,b)=> (b.expectancy??-99) - (a.expectancy??-99));
+
+  if(charts.cat) charts.cat.destroy();
+  if(!setupStats.length){
+    document.getElementById('categoryChart').getContext('2d').clearRect(0,0,9999,9999);
+  } else {
+    charts.cat = new Chart(document.getElementById('categoryChart'), {
+      type:'bar',
+      data:{ labels: setupStats.map(s=>`${s.setup}  (${s.closed} closed)`),
+        datasets:[
+          { label:'Expectancy (Avg R)', data: setupStats.map(s=>s.expectancy), yAxisID:'r',
+            backgroundColor: setupStats.map(s=> s.expectancy>=0 ? '#00c89699' : '#ff4d4d99'),
+            borderColor: setupStats.map(s=> s.expectancy>=0 ? '#00c896' : '#ff4d4d'), borderWidth:1 },
+        ]},
+      options:{ responsive:true, animation:false, indexAxis:'y',
+        plugins:{ legend:{display:false},
+          tooltip:{ callbacks:{ label:(ctx)=>{
+            const s = setupStats[ctx.dataIndex];
+            return [`Expectancy: ${s.expectancy>=0?'+':''}${s.expectancy.toFixed(2)}R`, `Win rate: ${s.winRate.toFixed(0)}%`];
+          }}}
+        },
+        scales:{
+          r:{ position:'bottom', title:{display:true,text:'Expectancy — Avg R-multiple per trade',color:'#8b97a8'}, ticks:{color:'#8b97a8',callback:(v)=>`${v}R`}, grid:{color:'rgba(255,255,255,.05)'} },
+          y:{ ticks:{color:'#8b97a8'}, grid:{display:false} },
+        } } });
+  }
+}
+
+// ── Table (Trades) ────────────────────────────────────────────────────────────
+function rankPill(v){
+  if(!v) return v ?? '—';
+  const s = String(v);
+  if(/S-TIER/i.test(s)) return `<span class="pill s">${s}</span>`;
+  if(/A-TIER/i.test(s)) return `<span class="pill a">${s}</span>`;
+  if(/B-TIER/i.test(s)) return `<span class="pill b">${s}</span>`;
+  return s;
+}
+
+// Lead with diagnostic columns (what happened, on what setup, at what R) — not Time/UID first.
+const PRIORITY_COLS = ['Time','Setup','Status','Rank','Score','Signal Price','Target Price','Stop Price'];
+function orderCols(cols){
+  const present = PRIORITY_COLS.filter(c=>cols.includes(c));
+  const rest = cols.filter(c=>!PRIORITY_COLS.includes(c));
+  return [...present, ...rest];
+}
+
+function renderTradeTable(){
+  if(!filteredTrades.length){
+    document.getElementById('tableHead').innerHTML = '';
+    document.getElementById('tableBody').innerHTML = '<tr><td style="padding:14px;color:var(--text-muted)">No rows match current filters.</td></tr>';
+    document.getElementById('rowCount').textContent = '0';
+    document.getElementById('pageInfo').textContent = '—';
+    return;
+  }
+  const baseCols = orderCols(Object.keys(filteredTrades[0]));
+  const hasR = baseCols.includes('Stop Price');
+  const cols = hasR ? [...baseCols, 'R'] : baseCols;
+  if(!sortCol) sortCol = 'Time';
+
+  const sorted = [...filteredTrades].sort((a,b)=>{
+    let va, vb;
+    if(sortCol === 'R'){ va = tradeR(a); vb = tradeR(b); }
+    else { va=a[sortCol]; vb=b[sortCol]; }
+    const na = sortCol==='R' ? va : num(va, sortCol);
+    const nb = sortCol==='R' ? vb : num(vb, sortCol);
+    const cmp = (na!==null && na!==undefined && nb!==null && nb!==undefined) ? na-nb : String(va??'').localeCompare(String(vb??''));
+    return sortAsc ? cmp : -cmp;
+  });
+
+  document.getElementById('tableHead').innerHTML = '<tr>' + cols.map(c=>
+    `<th onclick="sortTrades('${c.replace(/'/g,"\\'")}')">${c}${c===sortCol?(sortAsc?' ↑':' ↓'):''}</th>`).join('') + '</tr>';
+
+  const total = sorted.length;
+  const start = currentPage*PAGE_SIZE, end = Math.min(start+PAGE_SIZE, total);
+  const page = sorted.slice(start,end);
+
+  document.getElementById('rowCount').textContent = total.toLocaleString();
+  document.getElementById('pageInfo').textContent = `${start+1}–${end} of ${total.toLocaleString()}`;
+  document.getElementById('prevBtn').disabled = currentPage===0;
+  document.getElementById('nextBtn').disabled = end>=total;
+
+  document.getElementById('tableBody').innerHTML = page.map(row=>{
+    return '<tr>' + cols.map(c=>{
+      if(c === 'R'){
+        const r = tradeR(row);
+        return r===null ? '<td>—</td>' : `<td class="${r>0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}R</td>`;
+      }
+      const v = row[c];
+      if(v===null || v===undefined || v==='') return '<td>—</td>';
+      if(c==='Rank') return `<td>${rankPill(v)}</td>`;
+      if(c==='Status'){
+        const s=String(v).toUpperCase();
+        const cls = s.includes('TP_HIT')?'pos':s.includes('SL_HIT')?'neg':'';
+        return `<td class="${cls}">${v}</td>`;
+      }
+      const n = num(v, c);
+      if(n!==null && NUMERIC_COLS.has(c)) return `<td>${n.toLocaleString(undefined,{maximumFractionDigits:2})}</td>`;
+      return `<td>${v}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+function sortTrades(col){ if(sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=false; } renderTradeTable(); }
+function changePage(dir){
+  const maxPage = Math.ceil(filteredTrades.length/PAGE_SIZE)-1;
+  currentPage = Math.max(0, Math.min(maxPage, currentPage+dir));
+  renderTradeTable();
+}
+
+// ── Market Dashboard rendering ────────────────────────────────────────────────
+function renderSimpleTable(elId, rows){
+  const el = document.getElementById(elId);
+  if(!rows || !rows.length){ el.querySelector('thead').innerHTML=''; el.querySelector('tbody').innerHTML='<tr><td style="padding:10px;color:var(--text-muted)">No data.</td></tr>'; return; }
+  const headers = rows[0];
+  el.querySelector('thead').innerHTML = '<tr>' + headers.map(h=>`<th>${h ?? ''}</th>`).join('') + '</tr>';
+  el.querySelector('tbody').innerHTML = rows.slice(1).map(r=>'<tr>' + headers.map((_,i)=>{
+    const v = r[i];
+    if(v===undefined || v===null || v==='') return '<td>—</td>';
+    const n = parseFloat(String(v).replace(/[%,$]/g,''));
+    if(!isNaN(n) && /%|score|vs/i.test(headers[i]||'')){
+      const cls = n>0?'pos':n<0?'neg':'';
+      return `<td class="${cls}">${v}</td>`;
+    }
+    return `<td>${v}</td>`;
+  }).join('') + '</tr>').join('');
+}
+
+function renderDashboardView(){
+  if(!dashData.macro) return;
+  renderSimpleTable('macroTable', sortByCol(dashData.macro.rows, 'VS SPY 1D'));
+  renderSimpleTable('hardAssetsTable', sortByCol(dashData.hardAssets.rows, 'VS SPY 1D'));
+  renderSimpleTable('sectorsTable', dashData.sectors.rows);
+  renderSimpleTable('top20Table', dashData.top20.rows);
+
+  // KPI strip — pull a few notable rows (VIX, SPY) from macro if present
+  const macroRows = dashData.macro.rows.slice(1);
+  const findRow = (ticker) => macroRows.find(r => String(r[0]||'').trim().toUpperCase() === ticker);
+  const vix = findRow('VIX'), spy = findRow('SPY'), dxy = findRow('DXY');
+  const cardFor = (label, row, idx) => {
+    if(!row) return { label, value:'—', sub:'not found' };
+    const v = row[idx];
+    return { label, value: v ?? '—', sub: row[1] || '' };
+  };
+  const cards = [
+    cardFor('VIX (1D vs SPY)', vix, 2),
+    cardFor('SPY (63D vs SPY)', spy, 5),
+    cardFor('DXY (1D vs SPY)', dxy, 2),
+  ];
+  document.getElementById('dashKpiRow').innerHTML = cards.map(c=>`
+    <div class="kpi-card"><div class="kpi-label">${c.label}</div><div class="kpi-value">${c.value}</div><div class="kpi-sub">${c.sub}</div></div>`).join('');
+
+  // Sector chart — Ticker vs Score (ranked bars stay; RRG below adds the leader/laggard rotation view practitioners expect)
+  buildHeaderIndexedChart('sectorChart', dashData.sectors.rows, 'Score', 'bar', '#00c896');
+  buildHeaderIndexedChart('top20Chart', dashData.top20.rows, '5D vs Sector', 'bar', '#f5a623');
+  buildRRGChart('rrgChart', dashData.sectors.rows);
+}
+
+// Sort a [headerRow, ...dataRows] table by a named column (numeric, descending) — keeps tables scannable like the Sectors table
+function sortByCol(rows, colName){
+  if(!rows || rows.length<2) return rows;
+  const headers = rows[0];
+  const idx = headers.findIndex(h => String(h||'').trim().toLowerCase() === colName.toLowerCase());
+  if(idx<0) return rows;
+  const body = rows.slice(1).slice().sort((a,b)=>{
+    const na = parseFloat(String(a[idx]||'').replace(/[%,$]/g,''));
+    const nb = parseFloat(String(b[idx]||'').replace(/[%,$]/g,''));
+    if(isNaN(na) && isNaN(nb)) return 0;
+    if(isNaN(na)) return 1;
+    if(isNaN(nb)) return -1;
+    return nb - na;
+  });
+  return [headers, ...body];
+}
+
+// RRG (Relative Rotation Graph) — the standard sector-rotation view: relative strength (x) vs momentum (y), four quadrants.
+// X axis = VS SPY 21D (relative strength level), Y axis = VS SPY 5D (short-term momentum / direction of that strength).
+// Quadrant color = the textbook RRG read: leading / weakening / lagging / improving.
+function buildRRGChart(canvasId, rows){
+  const canvas = document.getElementById(canvasId);
+  if(!rows || rows.length<2){ if(charts[canvasId]){charts[canvasId].destroy(); delete charts[canvasId];} return; }
+  const headers = rows[0];
+  const xIdx = headers.findIndex(h=>/vs spy 21d/i.test(h||''));
+  const yIdx = headers.findIndex(h=>/vs spy 5d/i.test(h||''));
+  const labelIdx = headers.findIndex(h=>/ticker|symbol/i.test(h||'')) >= 0 ? headers.findIndex(h=>/ticker|symbol/i.test(h||'')) : 0;
+  if(xIdx<0 || yIdx<0){ if(charts[canvasId]){charts[canvasId].destroy(); delete charts[canvasId];} return; }
+
+  const pts = rows.slice(1).map(r=>{
+    const x = parseFloat(String(r[xIdx]||'').replace(/[%,$]/g,''));
+    const y = parseFloat(String(r[yIdx]||'').replace(/[%,$]/g,''));
+    return { label: r[labelIdx], x, y };
+  }).filter(p=>p.label && !isNaN(p.x) && !isNaN(p.y));
+
+  // Quadrant classification (relative strength x vs momentum y, both vs SPY = 0 baseline):
+  //   x>0,y>0 = Leading | x<0,y>0 = Improving | x<0,y<0 = Lagging | x>0,y<0 = Weakening
+  const quadColor = (x,y)=> x>=0 && y>=0 ? '#00c896' : x<0 && y>=0 ? '#5b9bd5' : x<0 && y<0 ? '#ff4d4d' : '#f5a623';
+
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId] = new Chart(canvas, {
+    type:'scatter',
+    data:{ datasets:[{
+      data: pts.map(p=>({x:p.x, y:p.y, label:p.label})),
+      backgroundColor: pts.map(p=>quadColor(p.x,p.y)),
+      borderColor: '#0d1117', borderWidth:1.5,
+      pointRadius:7, pointHoverRadius:9,
+    }]},
+    options:{ responsive:true, animation:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{ callbacks:{ label:(ctx)=>{
+          const p = ctx.raw;
+          return `${p.label}:  RS(21D) ${p.x>=0?'+':''}${p.x.toFixed(2)}%  ·  Mom(5D) ${p.y>=0?'+':''}${p.y.toFixed(2)}%`;
+        }}},
+      },
+      scales:{
+        x:{ title:{display:true,text:'Relative Strength — VS SPY 21D (%)',color:'#8b97a8'}, ticks:{color:'#8b97a8'}, grid:{color:(c)=> c.tick.value===0?'rgba(255,255,255,.35)':'rgba(255,255,255,.05)'} },
+        y:{ title:{display:true,text:'Momentum — VS SPY 5D (%)',color:'#8b97a8'}, ticks:{color:'#8b97a8'}, grid:{color:(c)=> c.tick.value===0?'rgba(255,255,255,.35)':'rgba(255,255,255,.05)'} },
+      }
+    },
+    plugins:[{
+      id:'rrgLabels',
+      afterDatasetsDraw(chart){
+        const {ctx, chartArea:{left,right,top,bottom}, scales:{x,y}} = chart;
+        ctx.save();
+        ctx.font = '11px -apple-system,sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,.35)';
+        ctx.fillText('IMPROVING', left+8, top+14);
+        ctx.fillText('LEADING', right-66, top+14);
+        ctx.fillText('LAGGING', left+8, bottom-8);
+        ctx.fillText('WEAKENING', right-78, bottom-8);
+        ctx.fillStyle = '#e8edf3';
+        ctx.font = '10px -apple-system,sans-serif';
+        chart.data.datasets[0].data.forEach(p=>{
+          ctx.fillText(p.label, x.getPixelForValue(p.x)+9, y.getPixelForValue(p.y)+3);
+        });
+        ctx.restore();
+      }
+    }]
+  });
+}
+
+function buildHeaderIndexedChart(canvasId, rows, metricHeader, type, color){
+  const canvas = document.getElementById(canvasId);
+  if(!rows || rows.length<2){ if(charts[canvasId]){charts[canvasId].destroy(); delete charts[canvasId];} return; }
+  const headers = rows[0];
+  const metricIdx = headers.findIndex(h => String(h||'').trim().toLowerCase() === metricHeader.toLowerCase());
+  const labelIdx = headers.findIndex(h => /ticker|symbol/i.test(h||'')) >= 0 ? headers.findIndex(h => /ticker|symbol/i.test(h||'')) : 0;
+  if(metricIdx < 0){ if(charts[canvasId]){charts[canvasId].destroy(); delete charts[canvasId];} return; }
+
+  const data = rows.slice(1)
+    .map(r => ({ label: r[labelIdx], val: parseFloat(String(r[metricIdx]||'').replace(/[%,$]/g,'')) }))
+    .filter(d => d.label && !isNaN(d.val))
+    .sort((a,b)=> b.val - a.val)
+    .slice(0, 20);
+
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId] = new Chart(canvas, {
+    type,
+    data:{ labels:data.map(d=>d.label), datasets:[{ label: metricHeader, data:data.map(d=>d.val),
+      backgroundColor: data.map(d=> d.val>=0 ? color+'99' : '#ff4d4d99'),
+      borderColor: data.map(d=> d.val>=0 ? color : '#ff4d4d'), borderWidth:1 }] },
+    options:{ responsive:true, animation:false, indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}}, y:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}} } } });
+}
+
+// ── Refresh loop ──────────────────────────────────────────────────────────────
+function setRefreshInterval(seconds){
+  clearInterval(refreshTimer);
+  REFRESH_SEC = parseInt(seconds);
+  const bar = document.getElementById('refreshBar');
+  if(REFRESH_SEC > 0){
+    bar.style.transform='scaleX(1)'; bar.style.transition=`transform ${REFRESH_SEC}s linear`;
+    requestAnimationFrame(()=>{ bar.style.transform='scaleX(0)'; });
+    refreshTimer = setInterval(()=>{
+      fetchAll();
+      bar.style.transition='none'; bar.style.transform='scaleX(1)';
+      requestAnimationFrame(()=>{ bar.style.transition=`transform ${REFRESH_SEC}s linear`; bar.style.transform='scaleX(0)'; });
+    }, REFRESH_SEC*1000);
+  } else { bar.style.transform='scaleX(0)'; }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setStatus(state){
+  const dot=document.getElementById('statusDot'), text=document.getElementById('statusText');
+  if(state==='live'){ dot.className='status-dot'; text.textContent='Live'; }
+  if(state==='fetching'){ dot.className='status-dot'; text.textContent='Fetching…'; }
+  if(state==='error'){ dot.className='status-dot error'; text.textContent='Error'; }
+}
+function showError(msg){ const b=document.getElementById('errorBanner'); b.textContent=msg; b.style.display='block'; }
+function hideError(){ document.getElementById('errorBanner').style.display='none'; }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+fetchAll();
+setRefreshInterval(REFRESH_SEC);
+</script>
+</body>
+</html>
