@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto Trading — Control Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --accent:#00c896; --negative:#ff4d4d; --warn:#f5a623;
+    --header-bg:#0f1923; --card-bg:#1a2332;
+    --text:#e8edf3; --text-muted:#8b97a8; --border:rgba(255,255,255,.08); --radius:10px; --gap:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:var(--text);min-height:100vh;padding:20px}
+
+  /* ── Header ── */
+  .header{background:var(--header-bg);border-radius:var(--radius);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--gap);flex-wrap:wrap;gap:12px}
+  .header h1{font-size:18px;font-weight:600;color:#fff}
+  .header-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .status{display:flex;align-items:center;gap:6px;font-size:12px;color:rgba(255,255,255,.7)}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  .status-dot.error{background:var(--negative);animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .sync-times{font-size:11px;color:var(--text-muted);display:flex;gap:14px;flex-wrap:wrap}
+  .sync-times span{display:flex;align-items:center;gap:4px}
+  .sync-stale{color:var(--warn)!important}
+  .refresh-controls{display:flex;align-items:center;gap:8px}
+  .refresh-controls select{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 8px;border-radius:4px;font-size:12px}
+  .refresh-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer}
+  .refresh-btn:hover{background:rgba(255,255,255,.2)}
+  .refresh-bar-container{height:3px;background:rgba(255,255,255,.1);border-radius:2px;margin-bottom:var(--gap);overflow:hidden}
+  .refresh-bar{height:100%;background:var(--accent);width:100%;transform-origin:left;transition:transform linear}
+  .mode-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+  .mode-badge.paper{background:rgba(245,166,35,.15);color:var(--warn);border:1px solid rgba(245,166,35,.3)}
+  .mode-badge.live{background:rgba(255,77,77,.15);color:var(--negative);border:1px solid rgba(255,77,77,.3)}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:8px;margin-bottom:var(--gap);flex-wrap:wrap}
+  .tab-btn{background:var(--card-bg);border:1px solid var(--border);color:var(--text-muted);padding:9px 18px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;transition:all .15s}
+  .tab-btn.active{color:#fff;border-color:var(--accent);background:rgba(0,200,150,.12)}
+  .tab-btn:hover:not(.active){color:var(--text);border-color:rgba(255,255,255,.2)}
+  .view{display:none}.view.active{display:block}
+
+  /* ── Section labels ── */
+  .section-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin:0 0 8px 2px}
+
+  /* ── KPI cards ── */
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+  .kpi-card{background:var(--card-bg);border-radius:var(--radius);padding:16px 20px;border:1px solid var(--border)}
+  .kpi-card.accent-border{border-color:rgba(0,200,150,.3)}
+  .kpi-card.warn-border{border-color:rgba(245,166,35,.35)}
+  .kpi-card.neg-border{border-color:rgba(255,77,77,.35)}
+  .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px}
+  .kpi-value{font-size:24px;font-weight:700}
+  .kpi-sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+  .kpi-sub2{font-size:11px;color:var(--text-muted);margin-top:1px;opacity:.7}
+  .pos{color:var(--accent)} .neg{color:var(--negative)} .warn{color:var(--warn)}
+  .tier-row{display:flex;gap:16px;align-items:baseline;margin-top:2px}
+  .tier-item{text-align:center}
+  .tier-item .tv{font-size:20px;font-weight:700}
+  .tier-item .tl{font-size:10px;letter-spacing:.4px;color:var(--text-muted)}
+
+  /* ── Action Required alert panel ── */
+  .alert-panel{border-radius:var(--radius);padding:14px 18px;margin-bottom:var(--gap);display:none}
+  .alert-panel.has-alerts{display:block;background:rgba(255,77,77,.07);border:1px solid rgba(255,77,77,.3)}
+  .alert-panel.all-clear{display:block;background:rgba(0,200,150,.06);border:1px solid rgba(0,200,150,.2)}
+  .alert-panel-title{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px}
+  .alert-panel.has-alerts .alert-panel-title{color:var(--negative)}
+  .alert-panel.all-clear .alert-panel-title{color:var(--accent)}
+  .alert-item{font-size:12.5px;color:var(--text);padding:3px 0;display:flex;gap:8px;align-items:baseline}
+  .alert-icon{font-size:12px;flex-shrink:0}
+  .alert-clear-msg{font-size:13px;color:var(--accent)}
+
+  /* ── Market permission panel ── */
+  .permission-panel{background:var(--card-bg);border-radius:var(--radius);border:1px solid var(--border);padding:18px 22px;margin-bottom:var(--gap)}
+  .permission-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--gap);margin-top:12px}
+  .permission-item .pi-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px}
+  .permission-item .pi-value{font-size:16px;font-weight:700}
+  .permission-enabled{color:var(--accent)}
+  .permission-reduced{color:var(--warn)}
+  .permission-disabled{color:var(--negative)}
+  .regime-bull{color:var(--accent)}
+  .regime-caution{color:var(--warn)}
+  .regime-bear{color:var(--negative)}
+
+  /* ── Score bucket table ── */
+  .bucket-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  .bucket-table th{text-align:left;padding:7px 12px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  .bucket-table td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .bucket-table tr:hover td{background:rgba(255,255,255,.025)}
+  .bucket-bar{height:6px;border-radius:3px;margin-top:4px}
+
+  /* ── Charts ── */
+  .chart-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+  .card{background:var(--card-bg);border-radius:var(--radius);padding:18px 22px;border:1px solid var(--border)}
+  .card h3{font-size:11px;font-weight:700;margin-bottom:4px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px}
+  .card-goal{font-size:11px;color:var(--text-muted);opacity:.6;margin-bottom:12px;font-style:italic}
+  .card canvas{max-height:260px}
+  .chart-placeholder{color:var(--text-muted);font-size:13px;padding:40px;text-align:center}
+
+  /* ── Insight card ── */
+  .insight-card{background:rgba(0,200,150,.07);border:1px solid rgba(0,200,150,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:var(--gap);font-size:13px;line-height:1.55;color:var(--text-muted);display:none}
+
+  /* ── Command Center filter bar ── */
+  .cmd-filter-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:var(--gap);background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px}
+  .cmd-filter-label{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);white-space:nowrap}
+  .cmd-filter-bar select{background:#1e2d40;border:1px solid rgba(0,200,150,.25);color:#e8edf3;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;-webkit-appearance:auto;appearance:auto}
+  .cmd-filter-bar select option{background:#1a2332;color:#e8edf3}
+  .cmd-filter-bar select:focus{outline:none;border-color:var(--accent)}
+  .cmd-filter-chip{font-size:11px;font-weight:700;color:var(--warn);padding:3px 10px;border-radius:12px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.3);margin-left:4px}
+
+  /* ── Gate pills ── */
+  .gate-pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--gap)}
+  .gate-pill{background:var(--card-bg);border:1px solid var(--border);color:var(--text-muted);padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}
+  .gate-pill.active{color:#fff;border-color:var(--accent);background:rgba(0,200,150,.14)}
+
+  /* ── Filter bar ── */
+  .filter-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:var(--gap)}
+  .filter-bar label{font-size:12px;color:var(--text-muted)}
+  .filter-bar select{background:var(--card-bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px}
+
+  /* ── Tables ── */
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;white-space:nowrap}
+  thead th:hover{color:var(--text)}
+  tbody td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap}
+  tbody tr:hover{background:rgba(255,255,255,.03)}
+  .table-card{overflow-x:auto;position:relative}
+  .table-card::after{content:'';position:absolute;right:0;top:0;bottom:0;width:40px;background:linear-gradient(to right,transparent,var(--card-bg));pointer-events:none}
+  .pagination{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;color:var(--text-muted)}
+  .pagination button{background:var(--card-bg);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px}
+  .pagination button:disabled{opacity:.4;cursor:default}
+
+  /* ── Pills ── */
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .pill.s{background:rgba(255,77,77,.18);color:#ff8a8a}
+  .pill.a{background:rgba(255,193,7,.18);color:#ffd25c}
+  .pill.b{background:rgba(0,200,150,.18);color:#5cffce}
+
+  /* ── Monthly heatmap ── */
+  .monthly-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
+  .month-cell{border-radius:6px;padding:10px 6px;text-align:center}
+  .month-cell .mc-label{font-size:10px;color:var(--text-muted)}
+  .month-cell .mc-value{font-size:15px;font-weight:700;margin-top:4px}
+
+  /* ── Banners ── */
+  .error-banner{background:rgba(255,77,77,.1);border:1px solid var(--negative);color:var(--negative);padding:10px 16px;border-radius:6px;font-size:13px;margin-bottom:var(--gap);display:none}
+  .info-banner{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);color:var(--warn);padding:10px 14px;border-radius:6px;font-size:12px;margin:8px 0 16px}
+
+  /* ── Footer ── */
+  .footer{text-align:center;font-size:11px;color:var(--text-muted);margin-top:20px}
+
+  /* ── Data quality row ── */
+  .dq-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:var(--gap)}
+  .dq-item{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:12px;display:flex;gap:8px;align-items:center}
+  .dq-ok{border-color:rgba(0,200,150,.2);color:var(--text-muted)}
+  .dq-warn{border-color:rgba(245,166,35,.3);color:var(--warn)}
+  .dq-bad{border-color:rgba(255,77,77,.3);color:var(--negative)}
+
+  @media(max-width:600px){.kpi-row{grid-template-columns:repeat(2,1fr)}.chart-row{grid-template-columns:1fr}.tabs{gap:4px}.tab-btn{padding:8px 12px;font-size:12px}}
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <h1>Auto Trading — Control Dashboard</h1>
+    <span class="mode-badge paper" id="modeBadge">SIM PAPER</span>
+  </div>
+  <div class="header-meta">
+    <div class="status"><div class="status-dot" id="statusDot"></div><span id="statusText">Loading…</span></div>
+    <div class="sync-times">
+      <span>Sheet: <span id="lastSheetSync">—</span></span>
+    </div>
+    <div class="refresh-controls">
+      <label style="color:rgba(255,255,255,.6);font-size:12px">Refresh:</label>
+      <select id="refreshSelect" onchange="setRefreshInterval(this.value)">
+        <option value="0">Off</option>
+        <option value="30">30s</option>
+        <option value="60" selected>1m</option>
+        <option value="300">5m</option>
+        <option value="900">15m</option>
+      </select>
+      <button class="refresh-btn" onclick="fetchAll()">↻ Now</button>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-bar-container"><div class="refresh-bar" id="refreshBar"></div></div>
+<div class="error-banner" id="errorBanner"></div>
+
+<!-- ── TABS ──────────────────────────────────────────────────────────── -->
+<div class="tabs">
+  <button class="tab-btn active" id="tabBtn-command" onclick="showView('command')">⚡ Command Center</button>
+  <button class="tab-btn" id="tabBtn-risk"    onclick="showView('risk')">🛡 Risk &amp; Exposure</button>
+  <button class="tab-btn" id="tabBtn-strategy" onclick="showView('strategy')">📈 Strategy Validation</button>
+  <button class="tab-btn" id="tabBtn-market"  onclick="showView('market')">🌐 Market Context</button>
+  <button class="tab-btn" id="tabBtn-ledger"  onclick="showView('ledger')">📒 Trade Ledger</button>
+</div>
+
+<!-- ═══════════════════ COMMAND CENTER ═══════════════════════════════════ -->
+<div class="view active" id="view-command">
+  <!-- Command Center filters -->
+  <div class="cmd-filter-bar">
+    <span class="cmd-filter-label">SCRIPT ERA</span>
+    <select id="cmdEraSelect" onchange="setCmdFilter()">
+      <option value="">All Eras</option>
+      <option value="v10">v10 (pre-May 29)</option>
+      <option value="v11">v11 (May 29–Jun 7)</option>
+      <option value="v12">v12 (Jun 8+)</option>
+    </select>
+    <span class="cmd-filter-label" style="margin-left:12px">ALERT TYPE</span>
+    <select id="cmdGateSelect" onchange="setCmdFilter()">
+      <option value="">All Gates</option>
+    </select>
+    <span class="cmd-filter-label" style="margin-left:12px">ENTRY TYPE</span>
+    <select id="cmdSetupSelect" onchange="setCmdFilter()">
+      <option value="">All Setups</option>
+    </select>
+    <span id="cmdFilterChip" class="cmd-filter-chip" style="display:none"></span>
+  </div>
+
+  <div class="section-label">Risk State</div>
+  <div class="kpi-row" id="riskKpiRow"></div>
+
+  <div class="alert-panel" id="alertPanel">
+    <div class="alert-panel-title" id="alertTitle"></div>
+    <div id="alertItems"></div>
+  </div>
+
+  <div class="section-label">P&amp;L Summary</div>
+  <div class="kpi-row" id="pnlKpiRow"></div>
+
+  <div class="section-label">Strategy Health</div>
+  <div class="kpi-row" id="cmdPerfKpiRow"></div>
+
+  <div class="section-label">Score Bucket Expectancy — quick view</div>
+  <div class="card" style="margin-bottom:var(--gap)">
+    <h3>Expectancy by Score Bucket</h3>
+    <p class="card-goal">Does a higher score actually predict a better outcome? Each bucket must show positive expectancy to confirm the scoring model has edge.</p>
+    <div id="cmdBucketContent"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════ RISK & EXPOSURE ══════════════════════════════════ -->
+<div class="view" id="view-risk">
+  <div class="section-label">Account Risk State</div>
+  <div class="kpi-row" id="riskKpiRow2"></div>
+
+  <div class="section-label">Open Positions</div>
+  <div class="card table-card" style="margin-bottom:var(--gap)">
+    <h3>Open Positions — <span id="openCount">—</span> positions</h3>
+    <table id="openTable"><thead id="openTableHead"></thead><tbody id="openTableBody"></tbody></table>
+  </div>
+
+  <div class="chart-row">
+    <div class="card">
+      <h3>Open Risk by Ticker ($)</h3>
+      <p class="card-goal">Per-position worst-case loss. Uniform bars = fixed 1R per trade. Outliers signal sizing deviations.</p>
+      <canvas id="openRiskChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Open Exposure by Ticker ($)</h3>
+      <p class="card-goal">Capital tied up per position. Sum = total account dollars exposed to market.</p>
+      <canvas id="openExposureChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ STRATEGY VALIDATION ══════════════════════════════ -->
+<div class="view" id="view-strategy">
+  <div class="section-label">Performance KPIs</div>
+  <div class="kpi-row" id="perfKpiRow"></div>
+
+  <div class="insight-card" id="insightCard"></div>
+
+  <div class="gate-pills" id="gatePills"></div>
+
+  <div class="filter-bar">
+    <label>Rank</label>
+    <select id="filterRank" data-filter-col="Rank"><option value="">All</option></select>
+    <label>Status</label>
+    <select id="filterStatus" data-filter-col="Status"><option value="">All</option></select>
+    <label>Setup</label>
+    <select id="filterSetup" data-filter-col="Setup"><option value="">All</option></select>
+  </div>
+
+  <div class="section-label">Score Bucket Expectancy</div>
+  <div class="chart-row">
+    <div class="card">
+      <h3>Expectancy by Score Bucket</h3>
+      <p class="card-goal">Validates that higher scores produce better outcomes. Each bucket = a tier of signal quality. Bars should slope upward to confirm model edge.</p>
+      <canvas id="bucketChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Win Rate &amp; Trade Count by Score Bucket</h3>
+      <p class="card-goal">Win rate by tier alongside sample size. Low n = unreliable — treat with caution until each bucket reaches ≥20 closed trades.</p>
+      <canvas id="bucketWrChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Equity + Drawdown -->
+  <div class="chart-row">
+    <div class="card">
+      <h3>Equity Curve — Cumulative R</h3>
+      <p class="card-goal">Rising curve = the system is generating edge. X-axis = trade number, not time — removes trade-frequency distortion.</p>
+      <canvas id="equityChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Drawdown — Underwater Curve</h3>
+      <p class="card-goal">How far below peak equity at any point? Shallower + faster recovery = better risk-adjusted performance.</p>
+      <canvas id="drawdownChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Score Scatter + Win R Distribution -->
+  <div class="chart-row">
+    <div class="card">
+      <h3>Score vs R-Outcome — Signal Quality</h3>
+      <p class="card-goal">Green = wins, red = losses. Right-skewed green cluster (high score → positive R) confirms scoring model has edge.</p>
+      <canvas id="scatterChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Win R Distribution — when the trade works, by how much?</h3>
+      <p class="card-goal">Losses are always −1R (fixed stop). The question is: are winning trades hitting 2R+?</p>
+      <canvas id="distChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Setup Performance + Monthly P&L -->
+  <div class="chart-row">
+    <div class="card">
+      <h3>Setup Performance — Expectancy by Setup</h3>
+      <p class="card-goal">Which setups carry the strategy vs drag it. Kill or paper-trade losers; size up on winners once n ≥ 20 closed.</p>
+      <canvas id="categoryChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Monthly P&amp;L</h3>
+      <p class="card-goal">Spot calendar patterns and regime shifts. Consecutive red months = strategy stress or condition mismatch.</p>
+      <div id="monthlyHeatmap" style="padding-top:4px"><div class="chart-placeholder">No closed trades yet.</div></div>
+    </div>
+  </div>
+
+  <!-- Version Breakdown + Sim Trade Equivalent -->
+  <div class="card" style="margin-bottom:var(--gap)">
+    <h3>Simulated Trade Equivalent &amp; Version Breakdown</h3>
+    <p class="card-goal">Translate paper-trading speed into equivalent real-account experience. Annualized figures use live-account sizing ($5K, $125/R).</p>
+    <div id="simTradeContent"><div class="chart-placeholder">Loading…</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MARKET CONTEXT ═══════════════════════════════════ -->
+<div class="view" id="view-market">
+  <!-- Trading permission directive -->
+  <div class="permission-panel">
+    <div class="section-label" style="margin-bottom:10px">Trading Permission</div>
+    <div class="permission-grid" id="permissionGrid"></div>
+  </div>
+
+  <div class="section-label">Sector Pulse</div>
+  <div class="kpi-row" id="dashKpiRow"></div>
+
+  <div class="card" style="margin-bottom:var(--gap)">
+    <h3>Sector Relative Rotation — RRG</h3>
+    <p class="card-goal">Leading (strong + accelerating) = trade. Lagging (weak + falling) = avoid. X = RS 21D vs SPY · Y = momentum 5D vs SPY.</p>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">
+      <span style="color:#00c896">●</span> Leading &nbsp;
+      <span style="color:#f5a623">●</span> Weakening &nbsp;
+      <span style="color:#ff4d4d">●</span> Lagging &nbsp;
+      <span style="color:#5b9bd5">●</span> Improving
+    </div>
+    <canvas id="rrgChart" height="90"></canvas>
+  </div>
+
+  <div class="chart-row">
+    <div class="card">
+      <h3>Sectors vs SPY — 21D Relative Strength</h3>
+      <p class="card-goal">Rank sectors by 21D RS. Bias new longs toward top-ranked sectors.</p>
+      <canvas id="sectorChart"></canvas>
+    </div>
+    <div class="card">
+      <h3>Top 20 — Sector Concentration</h3>
+      <p class="card-goal">Which sectors are generating the most high-quality signals right now.</p>
+      <canvas id="top20Chart"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-row">
+    <div class="card table-card"><h3>Macro / Defensive</h3><table id="macroTable"><thead></thead><tbody></tbody></table></div>
+    <div class="card table-card"><h3>Hard Assets &amp; Digital</h3><table id="hardAssetsTable"><thead></thead><tbody></tbody></table></div>
+  </div>
+  <div class="card table-card" style="margin-bottom:var(--gap)">
+    <h3>Sectors vs SPY</h3>
+    <table id="sectorsTable"><thead></thead><tbody></tbody></table>
+  </div>
+  <div class="card table-card">
+    <h3>Top 20</h3>
+    <table id="top20Table"><thead></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<!-- ═══════════════════ TRADE LEDGER ═════════════════════════════════════ -->
+<div class="view" id="view-ledger">
+  <div class="gate-pills" id="gatePillsLedger"></div>
+
+  <div class="filter-bar">
+    <label>Rank</label>
+    <select id="filterRankL" data-filter-col="Rank"><option value="">All</option></select>
+    <label>Status</label>
+    <select id="filterStatusL" data-filter-col="Status"><option value="">All</option></select>
+    <label>Setup</label>
+    <select id="filterSetupL" data-filter-col="Setup"><option value="">All</option></select>
+  </div>
+
+  <div class="card table-card">
+    <h3>Trade Ledger — <span id="rowCount">—</span> trades</h3>
+    <table id="dataTable"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+    <div class="pagination">
+      <span id="pageInfo">—</span>
+      <div style="display:flex;gap:8px">
+        <button id="prevBtn" onclick="changePage(-1)">← Prev</button>
+        <button id="nextBtn" onclick="changePage(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Auto Trading Control Dashboard ·
+  Trades: <a href="https://docs.google.com/spreadsheets/d/1dVVmz67h64BwcZIFAmJfFnmr6UvcbsdO7C3yNsaWWnE" target="_blank" style="color:var(--accent)">sheet</a> ·
+  Market: <a href="https://docs.google.com/spreadsheets/d/1vFrjW8jcPuM8tGoEUM1VzJcO7bcEbmRfVCAFbB-MSpQ" target="_blank" style="color:var(--accent)">sheet</a> ·
+  <!-- NOTE: API key is exposed client-side. Move to n8n proxy or Apps Script for production. -->
+  v3 · 2026-06-11
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+// NOTE: API key is exposed in client-side HTML.
+// Production fix: route Sheets reads through an n8n webhook or Google Apps Script endpoint.
+const API_KEY         = "AIzaSyAyaRFYoYFo2hYZ4Kde11P_sUB2Y0CUgD0";
+const TRADES_SHEET_ID = "1dVVmz67h64BwcZIFAmJfFnmr6UvcbsdO7C3yNsaWWnE";
+const TRADES_RANGE    = "Sheet1!A1:Z5000";
+const DASH_SHEET_ID   = "1vFrjW8jcPuM8tGoEUM1VzJcO7bcEbmRfVCAFbB-MSpQ";
+const DASH_TAB        = "Dashboard";
+const DASH_RANGES = {
+  macro:      `${DASH_TAB}!A2:H12`,
+  hardAssets: `${DASH_TAB}!A15:H20`,
+  sectors:    `${DASH_TAB}!A23:H60`,
+  top20:      `${DASH_TAB}!J23:R43`,
+};
+
+// Account sizing — change mode to 'live' and adjust sizes when transitioning
+const ACCOUNT_CONFIG = {
+  mode:           'paper',    // 'paper' | 'live'
+  paperSize:      100_000,
+  liveSize:       5_000,
+  riskPct:        0.025,      // 2.5% per trade (do not change without explicit request)
+  maxPositionPct: 0.50,       // 50% max single position
+  hardQueueCap:   30,
+  dailyLossLimit: -5,         // R — alert when today's closed R hits this
+};
+const RISK_PER_R      = ACCOUNT_CONFIG.paperSize * ACCOUNT_CONFIG.riskPct;  // $2,500
+const LIVE_RISK_PER_R = ACCOUNT_CONFIG.liveSize  * ACCOUNT_CONFIG.riskPct;  // $125
+
+// Version era deployment dates
+const ERA_V11 = new Date('2026-05-29T00:00:00');
+const ERA_V12 = new Date('2026-06-08T00:00:00');
+
+// Score buckets for edge validation
+const SCORE_BUCKETS = [
+  { label:'85+',   min:85, max:Infinity },
+  { label:'70–84', min:70, max:85 },
+  { label:'60–69', min:60, max:70 },
+  { label:'50–59', min:50, max:60 },
+  { label:'40–49', min:40, max:50 },
+];
+
+let REFRESH_SEC = 60;
+const PAGE_SIZE = 50;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allTrades = [], filteredTrades = [], dashData = {};
+let charts = {};
+let refreshTimer = null;
+let currentPage = 0;
+let sortCol = 'Time', sortAsc = false;
+let activeFilters = {};
+let activeGate = '';
+let lastFetchTime = null;
+// Command Center local filters (independent from global gate/filter)
+let cmdEraFilter = '', cmdGateFilter = '';
+
+// ── Sheets API ────────────────────────────────────────────────────────────────
+async function fetchRange(sheetId, range){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
+  const res = await fetch(url);
+  if(!res.ok){ const body = await res.text().catch(()=>""); throw new Error(`HTTP ${res.status} on ${range} — ${body.slice(0,160)}`); }
+  const json = await res.json();
+  return json.values || [];
+}
+
+function rowsToObjects(rows){
+  if(!rows.length) return [];
+  const headers = rows[0].map(h => String(h).trim());
+  return rows.slice(1).map(r => {
+    const o = {};
+    headers.forEach((h,i) => o[h] = r[i] !== undefined ? r[i] : null);
+    return o;
+  }).filter(o => Object.values(o).some(v => v !== null && v !== ""));
+}
+
+// ── Master fetch ──────────────────────────────────────────────────────────────
+async function fetchAll(){
+  setStatus('fetching');
+  try{
+    const [tradesRows, macroRows, hardRows, sectorRows, top20Rows] = await Promise.all([
+      fetchRange(TRADES_SHEET_ID, TRADES_RANGE),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.macro),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.hardAssets),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.sectors),
+      fetchRange(DASH_SHEET_ID, DASH_RANGES.top20),
+    ]);
+
+    allTrades = rowsToObjects(tradesRows).filter(r => {
+      const status = String(r['Status']||'').trim();
+      if(/script.change|version\s+change|^—$|^$/i.test(status) && !r['Signal Price'] && !r['Entry Price']) return false;
+      return !!(r['Time'] || r['Signal Price'] || r['Entry Price']);
+    });
+
+    dashData = {
+      macro:      { rows: macroRows },
+      hardAssets: { rows: hardRows },
+      sectors:    { rows: sectorRows },
+      top20:      { rows: top20Rows },
+    };
+
+    // Assign version era
+    allTrades.forEach(r => {
+      const t = parseTime(r['Time']);
+      if(!t){ r._era = null; return; }
+      r._era = t < ERA_V11 ? 'v10' : t < ERA_V12 ? 'v11' : 'v12';
+    });
+
+    lastFetchTime = new Date();
+    hideError();
+    setStatus('live');
+    document.getElementById('lastSheetSync').textContent = lastFetchTime.toLocaleTimeString();
+
+    buildGatePills();
+    populateFilterOptions();
+    applyFilters();
+    renderDashboardView();
+  }catch(err){
+    setStatus('error');
+    showError(`Could not load data: ${err.message}`);
+    console.error(err);
+  }
+}
+
+// ── View switching ────────────────────────────────────────────────────────────
+const ALL_VIEWS = ['command','risk','strategy','market','ledger'];
+function showView(name){
+  ALL_VIEWS.forEach(n => {
+    document.getElementById(`view-${n}`).classList.toggle('active', n===name);
+    document.getElementById(`tabBtn-${n}`).classList.toggle('active', n===name);
+  });
+}
+
+// ── Gate pills ────────────────────────────────────────────────────────────────
+function buildGatePills(){
+  const gates = [...new Set(allTrades.map(r=>(r['Gate']||'').trim()).filter(Boolean))].sort();
+  const pillsHTML =
+    `<button class="gate-pill${!activeGate?' active':''}" onclick="setGate('')">ALL</button>` +
+    gates.map(g=>`<button class="gate-pill${activeGate===g?' active':''}" onclick="setGate('${g}')">${g.toUpperCase()}</button>`).join('');
+  ['gatePills','gatePillsLedger'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = pillsHTML;
+  });
+  // Populate command center gate dropdown
+  const cmdGateSel = document.getElementById('cmdGateSelect');
+  if(cmdGateSel){
+    const cur = cmdGateSel.value;
+    cmdGateSel.innerHTML = '<option value="">All Gates</option>' +
+      gates.map(g=>`<option value="${g}">${g.toUpperCase()}</option>`).join('');
+    if(gates.includes(cur)) cmdGateSel.value = cur;
+  }
+  // Populate command center setup dropdown
+  const cmdSetupSel = document.getElementById('cmdSetupSelect');
+  if(cmdSetupSel){
+    const setups = [...new Set(allTrades.map(r=>(r['Setup']||'').trim()).filter(Boolean))].sort();
+    const cur = cmdSetupSel.value;
+    cmdSetupSel.innerHTML = '<option value="">All Setups</option>' +
+      setups.map(s=>`<option value="${s}">${s}</option>`).join('');
+    if(setups.includes(cur)) cmdSetupSel.value = cur;
+  }
+}
+function setGate(gate){ activeGate=gate; buildGatePills(); applyFilters(); }
+function gateFiltered(){ return !activeGate ? allTrades : allTrades.filter(r=>(r['Gate']||'').toLowerCase()===activeGate.toLowerCase()); }
+
+// Command Center era/gate/setup filters (local — don't affect other views)
+let cmdSetupFilter = '';
+function setCmdFilter(){
+  const eraSel   = document.getElementById('cmdEraSelect');
+  const gateSel  = document.getElementById('cmdGateSelect');
+  const setupSel = document.getElementById('cmdSetupSelect');
+  cmdEraFilter   = eraSel   ? eraSel.value   : '';
+  cmdGateFilter  = gateSel  ? gateSel.value  : '';
+  cmdSetupFilter = setupSel ? setupSel.value : '';
+  const chip = document.getElementById('cmdFilterChip');
+  const parts = [cmdEraFilter, cmdGateFilter, cmdSetupFilter].filter(Boolean);
+  if(chip){ chip.textContent = parts.length ? 'Filtered: '+parts.join(' · ') : ''; chip.style.display = parts.length?'inline-block':'none'; }
+  renderCommandCenter();
+}
+function cmdFilteredTrades(){
+  return filteredTrades.filter(r => {
+    if(cmdEraFilter   && r._era !== cmdEraFilter) return false;
+    if(cmdGateFilter  && (r['Gate']||'').trim().toLowerCase()  !== cmdGateFilter.toLowerCase())  return false;
+    if(cmdSetupFilter && (r['Setup']||'').trim().toLowerCase() !== cmdSetupFilter.toLowerCase()) return false;
+    return true;
+  });
+}
+
+// ── Dropdown filters ──────────────────────────────────────────────────────────
+function populateFilterOptions(){
+  document.querySelectorAll('[data-filter-col]').forEach(sel=>{
+    const col = sel.dataset.filterCol;
+    const vals = [...new Set(allTrades.map(r=>r[col]).filter(v=>v!==null && v!==""))].sort();
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All</option>' + vals.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.value = vals.includes(cur) ? cur : '';
+  });
+}
+document.querySelectorAll('[data-filter-col]').forEach(el=>{
+  el.addEventListener('change', ()=>{ activeFilters[el.dataset.filterCol]=el.value; applyFilters(); });
+});
+
+function applyFilters(){
+  filteredTrades = gateFiltered().filter(row=>
+    Object.entries(activeFilters).every(([col,val]) => !val || String(row[col])===val)
+  );
+  currentPage = 0;
+  renderAllViews();
+}
+
+function renderAllViews(){
+  renderCommandCenter();
+  renderRiskView();
+  renderStrategyView();
+  renderTradeTable();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function num(v){ const n=parseFloat(String(v||'').replace(/[$,%]/g,'')); return isNaN(n)?null:n; }
+function parseTime(v){ if(!v) return null; const d=new Date(v); return isNaN(d)?null:d; }
+function fmtR(r,dec=1){ return `${r>=0?'+':''}${r.toFixed(dec)}R`; }
+function fmtD(r,riskPerR=RISK_PER_R){ return `${r>=0?'+':'-'}$${Math.abs(r*riskPerR).toLocaleString(undefined,{maximumFractionDigits:0})}`; }
+function fmtDollar(v){ return `$${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}`; }
+function cls(v){ return v>0?'pos':v<0?'neg':''; }
+
+function tradeR(row){
+  const status = (row['Status']||'').toUpperCase();
+  // Use actual prices where available, fall back to signal prices
+  const entry = num(row['Fill Price'])   ?? num(row['Signal Price']);
+  const exit  = num(row['Sold at']);
+  const stp   = num(row['Stop Price']);
+  const tgt   = num(row['Target Price']);
+  if(entry===null || stp===null) return null;
+  const risk = Math.abs(entry - stp);
+  if(!risk) return null;
+  // Best case: actual exit price recorded
+  if(exit !== null) return (exit - entry) / risk;
+  // Fallback: status-based with theoretical target
+  if(status.includes('TP_HIT') && tgt!==null) return Math.abs(tgt - entry) / risk;
+  if(status.includes('SL_HIT')) return -1;
+  return null;
+}
+
+// isFilled: row was actually executed (has a fill price)
+// isOpen:   filled + not yet closed — the only true open positions
+// isClosed: status-confirmed closed (fill not required — status is proof enough)
+function isFilled(r){ return num(r['Fill Price']) !== null; }
+function isClosed(r){ return /TP_HIT|SL_HIT/i.test(r['Status']||''); }
+function isOpen(r)  { return isFilled(r) && !isClosed(r); }
+
+// Actual dollar P&L: (exit - fill) * qty  — only for confirmed fills
+function tradeDollarPnL(row){
+  const fill = num(row['Fill Price']);
+  const exit = num(row['Sold at']);
+  const qty  = num(row['Qty']) ?? num(row['qty']);
+  if(fill===null || exit===null || qty===null) return null;
+  return (exit - fill) * qty;
+}
+
+function computeStats(trades){
+  const closed = trades.filter(isClosed);
+  const rVals = closed.map(tradeR).filter(v=>v!==null);
+  if(!rVals.length) return null;
+  const wins=rVals.filter(r=>r>0), losses=rVals.filter(r=>r<=0);
+  const winRate=wins.length/rVals.length;
+  const avgWinR=wins.length ? wins.reduce((a,b)=>a+b,0)/wins.length : 0;
+  const avgLossR=losses.length ? losses.reduce((a,b)=>a+b,0)/losses.length : 0;
+  const expectancy=winRate*avgWinR+(1-winRate)*avgLossR;
+  const cumR=rVals.reduce((a,b)=>a+b,0);
+  const grossW=wins.reduce((a,b)=>a+b,0);
+  const grossL=Math.abs(losses.reduce((a,b)=>a+b,0));
+  const profitFactor=grossL>0?grossW/grossL:(grossW>0?Infinity:0);
+  // Actual dollar P&L from (exit - fill) * qty
+  const dollarVals = closed.map(tradeDollarPnL).filter(v=>v!==null);
+  const actualDollarPnL = dollarVals.length ? dollarVals.reduce((a,b)=>a+b,0) : null;
+  // Avg implied risk per trade (fill - stop) * qty
+  const impliedRiskVals = closed.map(r=>{
+    const fill=num(r['Fill Price']), stp=num(r['Stop Price']), qty=num(r['Qty'])??num(r['qty']);
+    return (fill!==null&&stp!==null&&qty!==null) ? Math.abs(fill-stp)*qty : null;
+  }).filter(v=>v!==null);
+  const avgImpliedRisk = impliedRiskVals.length ? impliedRiskVals.reduce((a,b)=>a+b,0)/impliedRiskVals.length : null;
+  // Max drawdown
+  let peak=0, maxDD=0, cumRun=0;
+  rVals.forEach(r=>{ cumRun+=r; peak=Math.max(peak,cumRun); maxDD=Math.min(maxDD,cumRun-peak); });
+  return{n:rVals.length,wins:wins.length,losses:losses.length,winRate,avgWinR,avgLossR,expectancy,cumR,profitFactor,maxDD,actualDollarPnL,avgImpliedRisk};
+}
+
+function computeScoreBuckets(trades){
+  return SCORE_BUCKETS.map(b=>{
+    const rows = trades.filter(r=>{ const s=num(r['Score']); return s!==null && s>=b.min && (b.max===Infinity?true:s<b.max); });
+    const stats = computeStats(rows);
+    return { ...b, n:rows.length, closedN:rows.filter(isClosed).length, stats };
+  });
+}
+
+// Compute open risk/exposure (by design: each trade risks exactly 1R)
+function computeOpenPositions(trades){
+  const open = trades.filter(isOpen);
+  return open.map(r=>{
+    const qty      = num(r['Qty']) ?? num(r['qty']);
+    const fill     = num(r['Fill Price']) ?? num(r['Signal Price']);
+    const stop     = num(r['Stop Price']);
+    const curPrice = num(r['Current Price']);
+    const risk     = (fill!==null && stop!==null && qty!==null) ? Math.abs(fill - stop) * qty : RISK_PER_R;
+    const exposure = (fill!==null && qty!==null) ? Math.abs(fill*qty) : null;
+    const unrealizedDollar = (fill!==null && curPrice!==null && qty!==null) ? (curPrice - fill) * qty : null;
+    const unrealizedR = (fill!==null && curPrice!==null && stop!==null && Math.abs(fill-stop)>0)
+      ? (curPrice - fill) / Math.abs(fill - stop) : null;
+    return {
+      ticker: r['Stock']||r['Ticker']||'—',
+      setup:  r['Setup']||'—',
+      rank:   r['Rank']||'—',
+      score:  num(r['Score']),
+      time:   r['Time']||'—',
+      fill, stop, qty, curPrice, risk, exposure, unrealizedDollar, unrealizedR, row:r,
+    };
+  });
+}
+
+// ── Command Center ────────────────────────────────────────────────────────────
+function renderCommandCenter(){
+  const cmdTrades = cmdFilteredTrades();
+  const stats = computeStats(cmdTrades);
+  const now=new Date();
+  const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const weekStart=new Date(now); weekStart.setDate(now.getDate()-now.getDay()); weekStart.setHours(0,0,0,0);
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const closed=cmdTrades.filter(isClosed);
+  const inWin=(r,from)=>{ const t=parseTime(r['Time']); return t&&t>=from; };
+  const sumR=rows=>rows.reduce((s,r)=>s+(tradeR(r)??0),0);
+  const todayR=sumR(closed.filter(r=>inWin(r,todayStart)));
+  const weekR=sumR(closed.filter(r=>inWin(r,weekStart)));
+  const monthR=sumR(closed.filter(r=>inWin(r,monthStart)));
+
+  const openPos = computeOpenPositions(cmdTrades);
+  const openCount = openPos.length;
+  const openRisk  = openCount * RISK_PER_R;
+  const openExposureTotal = openPos.reduce((s,p)=>s+(p.exposure??0),0);
+  const openExposurePct   = openExposureTotal>0 ? (openExposureTotal/ACCOUNT_CONFIG.paperSize*100).toFixed(1) : null;
+  const paperValue  = ACCOUNT_CONFIG.paperSize + (stats?.cumR??0)*RISK_PER_R;
+  const liveEquiv   = ACCOUNT_CONFIG.liveSize  + (stats?.cumR??0)*LIVE_RISK_PER_R;
+  const maxDD = stats?.maxDD??0;
+
+  // Actual dollar P&L from (exit-fill)*qty
+  const actualDollar = stats?.actualDollarPnL ?? null;
+  const avgRisk = stats?.avgImpliedRisk ?? null;
+  // Unrealized P&L on open positions (needs Current Price column)
+  const unrealizedDollar = openPos.reduce((s,p) => p.unrealizedDollar!==null ? s + p.unrealizedDollar : s, 0);
+  const hasUnrealized = openPos.some(p=>p.unrealizedDollar!==null);
+  // Approx Alpaca paper balance = $100k + closed P&L + unrealized
+  const closedDollar = actualDollar ?? 0;
+  const approxAlpaca = ACCOUNT_CONFIG.paperSize + closedDollar + (hasUnrealized ? unrealizedDollar : 0);
+  // Approx live equivalent — scale by live vs paper starting size
+  const liveScale = ACCOUNT_CONFIG.liveSize / ACCOUNT_CONFIG.paperSize;
+  const approxLive = ACCOUNT_CONFIG.liveSize + (closedDollar + (hasUnrealized ? unrealizedDollar : 0)) * liveScale;
+
+  // Risk state KPIs
+  document.getElementById('riskKpiRow').innerHTML = [
+    { label:'Approx Alpaca (Paper)',
+      value: `$${approxAlpaca.toLocaleString(undefined,{maximumFractionDigits:0})}`,
+      sub: `Closed P&L: ${actualDollar!==null?(actualDollar>=0?'+':'-')+'$'+Math.abs(actualDollar).toLocaleString(undefined,{maximumFractionDigits:0}):'—'}${hasUnrealized?' · Unrealized: '+(unrealizedDollar>=0?'+':'-')+'$'+Math.abs(unrealizedDollar).toLocaleString(undefined,{maximumFractionDigits:0}):''} · ${fmtR(stats?.cumR??0)}`,
+      cls: approxAlpaca >= ACCOUNT_CONFIG.paperSize ? 'pos' : 'neg',
+      border: approxAlpaca >= ACCOUNT_CONFIG.paperSize ? 'accent' : 'neg' },
+    { label:'Approx Live ($5k)',
+      value: `$${approxLive.toLocaleString(undefined,{maximumFractionDigits:0})}`,
+      sub: `If trading ${ACCOUNT_CONFIG.liveSize.toLocaleString()} real · avg risk $${avgRisk!==null?avgRisk.toFixed(0):'—'}/trade · ${fmtR(stats?.cumR??0)}`,
+      cls: approxLive >= ACCOUNT_CONFIG.liveSize ? 'pos' : 'neg',
+      border: approxLive >= ACCOUNT_CONFIG.liveSize ? 'accent' : 'neg' },
+    { label:'Open Positions', value:openCount.toString(),
+      sub:`Cap: ${openCount}/${ACCOUNT_CONFIG.hardQueueCap}`,
+      cls: openCount>20?'warn':openCount>0?'':'',
+      border: openCount>25?'neg':openCount>0?'warn':'' },
+    { label:'Open Risk', value:`${fmtR(openCount)}`,
+      sub:`${fmtDollar(openRisk)} paper · ${fmtDollar(openCount*LIVE_RISK_PER_R)} live`,
+      cls: openCount>10?'warn':'', border:'' },
+    { label:'Open Exposure', value: openExposurePct!==null?`${openExposurePct}%`:'—',
+      sub: openExposurePct!==null?`${fmtDollar(openExposureTotal)} paper`:'No qty/price data',
+      cls: openExposurePct!==null&&parseFloat(openExposurePct)>50?'warn':'',
+      border: openExposurePct!==null&&parseFloat(openExposurePct)>50?'warn':'' },
+    { label:'Today Closed R', value:fmtR(todayR), sub:`${fmtD(todayR)} paper`, cls:cls(todayR),
+      border: todayR<=ACCOUNT_CONFIG.dailyLossLimit?'neg':todayR>0?'accent':'' },
+    { label:'Max Drawdown', value:fmtR(maxDD), sub:`${fmtD(maxDD)} paper`, cls:maxDD<-5?'neg':maxDD<0?'warn':'',
+      border: maxDD<-5?'neg':maxDD<-2?'warn':'' },
+    { label:'Execution Mode', value:ACCOUNT_CONFIG.mode.toUpperCase(),
+      sub:'Change ACCOUNT_CONFIG.mode to go live', cls:'warn', border:'warn' },
+  ].map(c=>`<div class="kpi-card ${c.border?c.border+'-border':''}">
+    <div class="kpi-label">${c.label}</div>
+    <div class="kpi-value ${c.cls||''}">${c.value}</div>
+    <div class="kpi-sub">${c.sub||''}</div>
+  </div>`).join('');
+
+  // P&L summary
+  document.getElementById('pnlKpiRow').innerHTML=[
+    {label:'Today',       r:todayR},
+    {label:'This Week',   r:weekR},
+    {label:'This Month',  r:monthR},
+    {label:'All-Time',    r:stats?.cumR??0, sub:`${stats?.n??0} closed trades`},
+  ].map(c=>`<div class="kpi-card${c.r>0?' accent-border':''}">
+    <div class="kpi-label">${c.label}</div>
+    <div class="kpi-value ${cls(c.r)}">${fmtR(c.r)}</div>
+    <div class="kpi-sub">${c.sub||fmtD(c.r)}</div>
+  </div>`).join('');
+
+  // Strategy health KPIs
+  const breakevenWR = stats&&stats.avgWinR>0?(100/(1+stats.avgWinR)).toFixed(0)+'%':'—';
+  document.getElementById('cmdPerfKpiRow').innerHTML=[
+    {label:'Expectancy', value:stats?`${fmtR(stats.expectancy,2)}`:'—',
+     sub:stats?`per trade · ${stats.n} closed`:'no closed trades', cls:stats?cls(stats.expectancy):''},
+    {label:'Win Rate', value:stats?`${(stats.winRate*100).toFixed(1)}%`:'—',
+     sub:stats?`${stats.wins}W / ${stats.losses}L · b/e ≈ ${breakevenWR}`:'—', cls:stats?(stats.expectancy>0?'pos':'neg'):''},
+    {label:'Profit Factor', value:stats?stats.profitFactor.toFixed(2):'—',
+     sub:'gross W ÷ gross L', cls:stats?(stats.profitFactor>=1?'pos':'neg'):''},
+    {label:'Cumulative R', value:stats?fmtR(stats.cumR):'—',
+     sub:'all closed · paper: '+fmtD(stats?.cumR??0), cls:stats?cls(stats.cumR):''},
+  ].map(c=>`<div class="kpi-card">
+    <div class="kpi-label">${c.label}</div>
+    <div class="kpi-value ${c.cls||''}">${c.value}</div>
+    <div class="kpi-sub">${c.sub||''}</div>
+  </div>`).join('');
+
+  // Score bucket quick view — use cmdTrades so it respects era/gate filter
+  renderScoreBucketTable('cmdBucketContent', cmdTrades);
+
+  // Alerts
+  renderAlerts(cmdTrades, stats, openCount, openExposurePct, todayR);
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+function renderAlerts(cmdTrades, stats, openCount, openExposurePct, todayR){
+  const alerts = [];
+  const closed = cmdTrades.filter(isClosed);
+  const open   = cmdTrades.filter(isOpen);
+
+  // Missing stop on open trades
+  const missingStop = open.filter(r=>!r['Stop Price'] || num(r['Stop Price'])===null);
+  if(missingStop.length) alerts.push({icon:'⚠️', msg:`${missingStop.length} open position${missingStop.length>1?'s':''} missing stop price.`});
+
+  // Missing fill price on open trades
+  const missingFill = open.filter(r=>!r['Fill Price'] || num(r['Fill Price'])===null);
+  if(missingFill.length) alerts.push({icon:'⚠️', msg:`${missingFill.length} open position${missingFill.length>1?'s':''} missing fill price.`});
+
+  // Missing exit price on closed trades
+  const EXIT_TIME_KEYS = ['Exit Time','Exit_Time','ExitTime','Close Time','Closed Time'];
+  const exitKey = EXIT_TIME_KEYS.find(k => allTrades.some(r=>r[k]!=null && r[k]!==''));
+  const missingExit = closed.filter(r=> !exitKey || !r[exitKey] || r[exitKey]==='');
+  if(missingExit.length) alerts.push({icon:'⚠️', msg:`${missingExit.length} closed trade${missingExit.length>1?'s':''} missing exit time.`});
+
+  // Open exposure > 50%
+  if(openExposurePct!==null && parseFloat(openExposurePct)>50)
+    alerts.push({icon:'🔴', msg:`Open exposure at ${openExposurePct}% — above 50% cap.`});
+
+  // Open positions > 25 (approaching hard cap)
+  if(openCount>25)
+    alerts.push({icon:'🔴', msg:`${openCount} open positions — approaching hard cap of ${ACCOUNT_CONFIG.hardQueueCap}.`});
+
+  // Daily loss limit
+  if(todayR<=ACCOUNT_CONFIG.dailyLossLimit)
+    alerts.push({icon:'🔴', msg:`Today's closed R is ${fmtR(todayR)} — at or beyond daily loss limit of ${fmtR(ACCOUNT_CONFIG.dailyLossLimit)}.`});
+
+  // Score bucket with negative expectancy and n >= 10
+  const buckets = computeScoreBuckets(cmdTrades);
+  buckets.forEach(b=>{
+    if(b.stats && b.stats.n>=10 && b.stats.expectancy<0)
+      alerts.push({icon:'📉', msg:`Score bucket ${b.label} has negative expectancy (${fmtR(b.stats.expectancy,2)}, n=${b.stats.n}) — review signal quality at this tier.`});
+  });
+
+  // v12 low sample (always check full allTrades for this, era filter may hide it)
+  const v12closed = allTrades.filter(r=>isClosed(r)&&r._era==='v12');
+  if(v12closed.length<20)
+    alerts.push({icon:'ℹ️', msg:`v12 has only ${v12closed.length} closed trades. Do not draw strategy conclusions yet — need ≥20.`});
+
+  // Stale data
+  if(lastFetchTime){
+    const ageMin = (Date.now()-lastFetchTime.getTime())/60000;
+    if(ageMin>20) alerts.push({icon:'⏱', msg:`Sheet data is ${Math.round(ageMin)}m old — consider refreshing.`});
+  }
+
+  const panel = document.getElementById('alertPanel');
+  const title = document.getElementById('alertTitle');
+  const items = document.getElementById('alertItems');
+  if(!alerts.length){
+    panel.className = 'alert-panel all-clear';
+    title.textContent = 'All Clear';
+    items.innerHTML = '<div class="alert-clear-msg">No active alerts. System operating within normal parameters.</div>';
+  } else {
+    panel.className = 'alert-panel has-alerts';
+    title.textContent = `${alerts.length} Action Required`;
+    items.innerHTML = alerts.map(a=>`<div class="alert-item"><span class="alert-icon">${a.icon}</span><span>${a.msg}</span></div>`).join('');
+  }
+}
+
+// ── Score bucket table ────────────────────────────────────────────────────────
+function renderScoreBucketTable(containerId, trades){
+  const buckets = computeScoreBuckets(trades || filteredTrades);
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const maxAbsExp = Math.max(0.01, ...buckets.map(b=>Math.abs(b.stats?.expectancy??0)));
+  container.innerHTML = `<table class="bucket-table">
+    <thead><tr>
+      <th>Score Bucket</th><th>Trades (closed)</th><th>Expectancy</th>
+      <th>Win Rate</th><th>Profit Factor</th><th>Edge</th>
+    </tr></thead>
+    <tbody>${buckets.map(b=>{
+      const s = b.stats;
+      const noData = !s || s.n<3;
+      const expCls = noData?'':s.expectancy>=0?'pos':'neg';
+      const expBar = noData?0:Math.round(Math.abs(s.expectancy)/maxAbsExp*100);
+      const barColor = noData?'#444':s.expectancy>=0?'#00c896':'#ff4d4d';
+      return `<tr>
+        <td style="font-weight:700;color:#fff">${b.label}</td>
+        <td>${b.closedN}<span style="color:var(--text-muted);font-size:11px"> / ${b.n} total</span></td>
+        <td class="${expCls}">${noData?'<span style="color:var(--text-muted)">—</span>':fmtR(s.expectancy,2)}
+          ${noData?'':`<div class="bucket-bar" style="width:${expBar}%;background:${barColor}"></div>`}
+        </td>
+        <td>${noData?'—':`${(s.winRate*100).toFixed(1)}%`}</td>
+        <td>${noData?'—':s.profitFactor===Infinity?'∞':s.profitFactor.toFixed(2)}</td>
+        <td style="font-size:11px;color:var(--text-muted)">${noData?'<3 trades':s.n<10?'low sample':s.expectancy>0?'✅ positive':'❌ negative'}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>
+  <div style="font-size:11px;color:var(--text-muted);margin-top:8px">Buckets with &lt;3 closed trades show — · Recommend ≥20 per bucket before acting on data.</div>`;
+}
+
+// ── Risk View ─────────────────────────────────────────────────────────────────
+function renderRiskView(){
+  const openPos = computeOpenPositions(allTrades);
+  const openCount = openPos.length;
+  const openRisk = openCount * RISK_PER_R;
+  const openExposureTotal = openPos.reduce((s,p)=>s+(p.exposure??0),0);
+  const openExposurePct = openExposureTotal>0?(openExposureTotal/ACCOUNT_CONFIG.paperSize*100).toFixed(1):null;
+  const stats = computeStats(allTrades);
+  const paperValue = ACCOUNT_CONFIG.paperSize + (stats?.cumR??0)*RISK_PER_R;
+
+  const actualDollar2 = stats?.actualDollarPnL ?? null;
+  document.getElementById('riskKpiRow2').innerHTML = [
+    { label:'Actual P&L (filled)',
+      value: actualDollar2!==null ? `${actualDollar2>=0?'+':'-'}$${Math.abs(actualDollar2).toLocaleString(undefined,{maximumFractionDigits:0})}` : fmtR(stats?.cumR??0),
+      sub: `${fmtR(stats?.cumR??0)} · avg risk/trade: ${stats?.avgImpliedRisk!=null?'$'+stats.avgImpliedRisk.toFixed(0):'—'} · Not Alpaca balance`,
+      cls:(actualDollar2??stats?.cumR??0)>=0?'pos':'neg' },
+    { label:'Open Positions', value:openCount.toString(), sub:`${openCount}/${ACCOUNT_CONFIG.hardQueueCap} queue`, cls:openCount>20?'warn':'' },
+    { label:'Open Risk $', value:fmtDollar(openRisk), sub:`${openCount}R at $${RISK_PER_R.toLocaleString()}/R paper`, cls:openCount>10?'warn':'' },
+    { label:'Open Risk (Live equiv)', value:fmtDollar(openCount*LIVE_RISK_PER_R), sub:`$${LIVE_RISK_PER_R}/R × ${openCount} positions`, cls:'' },
+    { label:'Open Exposure', value:openExposurePct!==null?`${openExposurePct}%`:'—', sub:openExposurePct!==null?fmtDollar(openExposureTotal)+' paper':'No qty/price data', cls:openExposurePct&&parseFloat(openExposurePct)>50?'neg':openExposurePct&&parseFloat(openExposurePct)>35?'warn':'' },
+    { label:'Max Drawdown', value:fmtR(stats?.maxDD??0), sub:fmtD(stats?.maxDD??0), cls:cls(stats?.maxDD??0) },
+  ].map(c=>`<div class="kpi-card">
+    <div class="kpi-label">${c.label}</div>
+    <div class="kpi-value ${c.cls||''}">${c.value}</div>
+    <div class="kpi-sub">${c.sub||''}</div>
+  </div>`).join('');
+
+  document.getElementById('openCount').textContent = openCount;
+
+  // Open positions table
+  const thead = document.getElementById('openTableHead');
+  const tbody = document.getElementById('openTableBody');
+  if(!openPos.length){
+    thead.innerHTML=''; tbody.innerHTML='<tr><td style="padding:14px;color:var(--text-muted)">No open positions.</td></tr>';
+  } else {
+    thead.innerHTML='<tr><th>Ticker</th><th>Setup</th><th>Rank</th><th>Score</th><th>Entry Time</th><th>Fill</th><th>Current</th><th>Stop</th><th>Unrealized</th><th>Risk $</th></tr>';
+    tbody.innerHTML=openPos.map(p=>{
+      const unrCls = p.unrealizedDollar===null?'':(p.unrealizedDollar>=0?'pos':'neg');
+      const unrTxt = p.unrealizedDollar!==null
+        ? `<span class="${unrCls}">${p.unrealizedDollar>=0?'+':'-'}$${Math.abs(p.unrealizedDollar).toFixed(0)}</span>${p.unrealizedR!==null?` <span style="font-size:11px;opacity:.7">(${fmtR(p.unrealizedR)})</span>`:''}`
+        : '<span style="color:var(--text-muted)">No cur price</span>';
+      const curTxt = p.curPrice!==null
+        ? `<span class="${p.fill!==null?(p.curPrice>=p.fill?'pos':'neg'):''}">${p.curPrice.toFixed(2)}</span>`
+        : '—';
+      return `<tr>
+        <td style="font-weight:700">${p.ticker}</td>
+        <td>${p.setup}</td>
+        <td>${rankPill(p.rank)}</td>
+        <td>${p.score!==null?p.score.toFixed(0):'—'}</td>
+        <td style="font-size:11px">${p.time.slice(0,16)}</td>
+        <td>${p.fill!==null?p.fill.toFixed(2):'—'}</td>
+        <td>${curTxt}</td>
+        <td class="neg">${p.stop!==null?p.stop.toFixed(2):'—'}</td>
+        <td>${unrTxt}</td>
+        <td class="warn">${fmtDollar(p.risk)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Open risk bar chart
+  if(openPos.length){
+    const labels = openPos.map(p=>p.ticker);
+    const riskData = openPos.map(p=>p.risk);
+    if(charts.openRisk) charts.openRisk.destroy();
+    charts.openRisk = new Chart(document.getElementById('openRiskChart'),{
+      type:'bar',
+      data:{labels,datasets:[{data:riskData,backgroundColor:'rgba(245,166,35,.55)',borderColor:'#f5a623',borderWidth:1}]},
+      options:{responsive:true,animation:false,plugins:{legend:{display:false}},
+        scales:{x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+                y:{ticks:{color:'#8b97a8',callback:v=>`$${(v/1000).toFixed(1)}k`},grid:{color:'rgba(255,255,255,.05)'}}}}
+    });
+
+    // Open exposure bar chart
+    const expData = openPos.map(p=>p.exposure??0);
+    if(charts.openExposure) charts.openExposure.destroy();
+    if(expData.some(v=>v>0)){
+      charts.openExposure = new Chart(document.getElementById('openExposureChart'),{
+        type:'bar',
+        data:{labels,datasets:[{data:expData,backgroundColor:'rgba(91,155,213,.55)',borderColor:'#5b9bd5',borderWidth:1}]},
+        options:{responsive:true,animation:false,plugins:{legend:{display:false}},
+          scales:{x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+                  y:{ticks:{color:'#8b97a8',callback:v=>`$${(v/1000).toFixed(1)}k`},grid:{color:'rgba(255,255,255,.05)'}}}}
+      });
+    } else {
+      clearCanvas('openExposureChart');
+      document.getElementById('openExposureChart').parentNode.innerHTML += '<div class="chart-placeholder" style="margin-top:-260px">No Fill Price / Qty data available.</div>';
+    }
+  } else {
+    clearCanvas('openRiskChart'); clearCanvas('openExposureChart');
+  }
+}
+
+// ── Strategy View ─────────────────────────────────────────────────────────────
+function renderStrategyView(){
+  renderPerfKPIs();
+  renderInsight();
+  renderScoreBucketCharts();
+  renderTradeCharts();
+  renderSimTradeEquivalent();
+}
+
+function renderPerfKPIs(){
+  const s=computeStats(filteredTrades);
+  const openCount=filteredTrades.filter(isOpen).length;
+  const breakevenWR=s&&s.avgWinR>0?(100/(1+s.avgWinR)).toFixed(0)+'%':'—';
+  const bCount=filteredTrades.filter(r=>/B-TIER/i.test(r['Rank']||'')).length;
+  const aCount=filteredTrades.filter(r=>/A-TIER/i.test(r['Rank']||'')).length;
+  const sCount=filteredTrades.filter(r=>/S-TIER/i.test(r['Rank']||'')).length;
+  const tierCard=`<div class="kpi-card">
+    <div class="kpi-label">Signals by Tier</div>
+    <div class="tier-row">
+      <div class="tier-item"><div class="tv" style="color:#5cffce">${bCount}</div><div class="tl">B-TIER</div></div>
+      <div class="tier-item" style="margin:0 4px;color:var(--text-muted);font-size:18px;align-self:center">/</div>
+      <div class="tier-item"><div class="tv" style="color:#ffd25c">${aCount}</div><div class="tl">A-TIER</div></div>
+      <div class="tier-item" style="margin:0 4px;color:var(--text-muted);font-size:18px;align-self:center">/</div>
+      <div class="tier-item"><div class="tv" style="color:#ff8a8a">${sCount}</div><div class="tl">S-TIER</div></div>
+    </div>
+    <div class="kpi-sub">${filteredTrades.length} total signals</div>
+  </div>`;
+  const cards=[
+    {label:'Expectancy', value:s?`${fmtR(s.expectancy,2)}`:'—', sub:s?`per trade · ${s.n} closed`:'no closed trades', cls:s?(s.expectancy>0?'pos':'neg'):''},
+    {label:'Win Rate', value:s?`${(s.winRate*100).toFixed(1)}%`:'—', sub:s?`${s.wins}W / ${s.losses}L · b/e ≈ ${breakevenWR}`:'—', cls:s?(s.expectancy>0?'pos':'neg'):''},
+    {label:'Profit Factor', value:s?s.profitFactor.toFixed(2):'—', sub:'gross W ÷ gross L', cls:s?(s.profitFactor>=1?'pos':'neg'):''},
+    {label:'Cumulative R', value:s?fmtR(s.cumR):'—',
+     sub: s ? `actual: ${s.actualDollarPnL!=null?(s.actualDollarPnL>=0?'+':'-')+'$'+Math.abs(s.actualDollarPnL).toLocaleString(undefined,{maximumFractionDigits:0}):'—'} · avg risk $${s.avgImpliedRisk!=null?s.avgImpliedRisk.toFixed(0):'—'}/trade` : 'all closed trades',
+     cls:s?cls(s.cumR):''},
+    {label:'Open Positions', value:filteredTrades.filter(isOpen).length.toString(), sub:'currently live'},
+  ];
+  document.getElementById('perfKpiRow').innerHTML=
+    cards.map(c=>`<div class="kpi-card"><div class="kpi-label">${c.label}</div><div class="kpi-value ${c.cls||''}">${c.value}</div><div class="kpi-sub">${c.sub||''}</div></div>`).join('')+tierCard;
+}
+
+function renderInsight(){
+  const s=computeStats(filteredTrades);
+  const card=document.getElementById('insightCard');
+  if(!s||s.n<3){card.style.display='none';return;}
+  const bySetup={};
+  filteredTrades.forEach(r=>{ const k=r['Setup']||'Other'; if(!bySetup[k]) bySetup[k]=[]; bySetup[k].push(r); });
+  const ss=Object.entries(bySetup).map(([setup,rows])=>{ const st=computeStats(rows); return st&&st.n>=3?{setup,exp:st.expectancy,n:st.n}:null; }).filter(Boolean).sort((a,b)=>b.exp-a.exp);
+  const best=ss[0],worst=ss[ss.length-1];
+  const lines=[];
+  if(s.expectancy>0){
+    lines.push(`<strong>Edge positive</strong> at ${s.expectancy>=0?'+':''}${s.expectancy.toFixed(2)}R expectancy — ${(s.winRate*100).toFixed(0)}% WR on ${s.n} closed trades.`);
+  } else {
+    lines.push(`<strong>Edge negative</strong> at ${s.expectancy.toFixed(2)}R. Need ≥${s.avgWinR>0?(100/(1+s.avgWinR)).toFixed(0):'—'}% WR to break even.`);
+  }
+  if(best&&worst&&best.setup!==worst.setup)
+    lines.push(`Best: <strong>${best.setup}</strong> (${best.exp>=0?'+':''}${best.exp.toFixed(2)}R, n=${best.n}). Watch: <strong>${worst.setup}</strong> (${worst.exp.toFixed(2)}R, n=${worst.n}).`);
+  card.innerHTML=`<span style="color:var(--accent);font-weight:700;font-size:11px;letter-spacing:.5px;text-transform:uppercase">Insight &nbsp;</span>${lines.join(' ')}`;
+  card.style.display='block';
+}
+
+// ── Score Bucket Charts ───────────────────────────────────────────────────────
+function renderScoreBucketCharts(){
+  const buckets = computeScoreBuckets(filteredTrades);
+  const labels = buckets.map(b=>b.label).reverse();
+  const expData = buckets.map(b=>b.stats?b.stats.expectancy:null).reverse();
+  const wrData  = buckets.map(b=>b.stats?parseFloat((b.stats.winRate*100).toFixed(1)):null).reverse();
+  const nData   = buckets.map(b=>b.closedN).reverse();
+
+  // Expectancy by bucket
+  if(charts.bucketExp) charts.bucketExp.destroy();
+  charts.bucketExp = new Chart(document.getElementById('bucketChart'),{
+    type:'bar',
+    data:{labels, datasets:[{data:expData, label:'Expectancy (R)',
+      backgroundColor:expData.map(v=>v===null?'rgba(100,100,100,.3)':v>=0?'rgba(0,200,150,.55)':'rgba(255,77,77,.5)'),
+      borderColor:expData.map(v=>v===null?'#555':v>=0?'#00c896':'#ff4d4d'), borderWidth:1}]},
+    options:{responsive:true,animation:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+              y:{ticks:{color:'#8b97a8',callback:v=>`${v}R`},grid:{color:'rgba(255,255,255,.05)'},
+                 title:{display:true,text:'Expectancy (R/trade)',color:'#8b97a8'}}}}
+  });
+
+  // Win rate + count by bucket
+  if(charts.bucketWr) charts.bucketWr.destroy();
+  charts.bucketWr = new Chart(document.getElementById('bucketWrChart'),{
+    type:'bar',
+    data:{labels, datasets:[
+      {label:'Win Rate %', data:wrData, backgroundColor:'rgba(91,155,213,.55)', borderColor:'#5b9bd5', borderWidth:1, yAxisID:'y'},
+      {label:'Closed Trades', data:nData, type:'line', borderColor:'rgba(245,166,35,.8)', backgroundColor:'transparent', borderWidth:2, pointRadius:4, yAxisID:'y2'},
+    ]},
+    options:{responsive:true,animation:false,
+      plugins:{legend:{labels:{color:'#8b97a8',font:{size:11}}}},
+      scales:{
+        x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+        y:{ticks:{color:'#8b97a8',callback:v=>`${v}%`},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'Win Rate',color:'#8b97a8'}},
+        y2:{position:'right',ticks:{color:'#f5a623'},grid:{display:false},title:{display:true,text:'Trades (n)',color:'#f5a623'}},
+      }}
+  });
+}
+
+// ── Trade Charts (equity, drawdown, scatter, dist, setup, monthly) ────────────
+function renderTradeCharts(){
+  const closed=filteredTrades.filter(isClosed)
+    .map(r=>({...r,_t:parseTime(r['Time'])})).filter(r=>r._t).sort((a,b)=>a._t-b._t)
+    .filter(r=>tradeR(r)!==null);
+
+  // Equity + Drawdown
+  let cumR=0, runMax=0;
+  const rSeries=[], ddSeries=[];
+  closed.forEach((r,i)=>{
+    cumR+=tradeR(r); rSeries.push({x:i+1,y:cumR});
+    runMax=Math.max(runMax,cumR); ddSeries.push({x:i+1,y:cumR-runMax});
+  });
+  if(charts.equity) charts.equity.destroy();
+  if(charts.drawdown) charts.drawdown.destroy();
+  if(!rSeries.length){ clearCanvas('equityChart'); clearCanvas('drawdownChart'); }
+  else {
+    const lc=cumR>=0?'#00c896':'#ff4d4d';
+    charts.equity=new Chart(document.getElementById('equityChart'),{
+      type:'line',data:{datasets:[{data:rSeries,borderColor:lc,backgroundColor:lc+'20',borderWidth:2,fill:true,tension:.15,pointRadius:0}]},
+      options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{
+        x:{type:'linear',title:{display:true,text:'Trade #',color:'#8b97a8'},ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+        y:{ticks:{color:'#8b97a8',callback:v=>`${v}R`},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'Cumulative R',color:'#8b97a8'}}
+      }}});
+    charts.drawdown=new Chart(document.getElementById('drawdownChart'),{
+      type:'line',data:{datasets:[{data:ddSeries,borderColor:'#ff4d4d',backgroundColor:'rgba(255,77,77,.15)',borderWidth:2,fill:true,tension:.1,pointRadius:0}]},
+      options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{
+        x:{type:'linear',title:{display:true,text:'Trade #',color:'#8b97a8'},ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+        y:{ticks:{color:'#8b97a8',callback:v=>`${v}R`},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'Drawdown (R)',color:'#8b97a8'}}
+      }}});
+  }
+
+  // Score vs R scatter
+  const scatterPts=closed.map(r=>({x:num(r['Score']),y:tradeR(r),label:r['Stock']||''})).filter(p=>p.x!==null);
+  if(charts.scatter) charts.scatter.destroy();
+  if(!scatterPts.length) clearCanvas('scatterChart');
+  else charts.scatter=new Chart(document.getElementById('scatterChart'),{
+    type:'scatter',
+    data:{datasets:[{data:scatterPts.map(p=>({x:p.x,y:p.y,label:p.label})),
+      backgroundColor:scatterPts.map(p=>p.y>0?'rgba(0,200,150,.55)':'rgba(255,77,77,.45)'),
+      borderColor:scatterPts.map(p=>p.y>0?'#00c896':'#ff4d4d'),borderWidth:1,pointRadius:5,pointHoverRadius:7}]},
+    options:{responsive:true,animation:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>{const p=ctx.raw;return`${p.label}  Score:${p.x.toFixed(0)}  R:${p.y>=0?'+':''}${p.y.toFixed(2)}R`;}}}},
+    scales:{
+      x:{min:0,max:100,title:{display:true,text:'Signal Score (0–100)',color:'#8b97a8'},ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+      y:{title:{display:true,text:'R Outcome',color:'#8b97a8'},ticks:{color:'#8b97a8',callback:v=>`${v}R`},
+         grid:{color:c=>c.tick.value===0?'rgba(255,255,255,.25)':'rgba(255,255,255,.05)'}}
+    }}});
+
+  // Win R distribution
+  const winRVals=closed.map(r=>tradeR(r)).filter(v=>v!==null&&v>0);
+  if(charts.dist) charts.dist.destroy();
+  if(!winRVals.length){ clearCanvas('distChart'); }
+  else {
+    const BIN=0.25;
+    const minB=Math.floor(Math.min(...winRVals)/BIN)*BIN;
+    const maxB=Math.ceil(Math.max(...winRVals)/BIN)*BIN;
+    const buckets={};
+    for(let b=minB;b<=maxB+BIN*.01;b=Math.round((b+BIN)*100)/100) buckets[b.toFixed(2)]=0;
+    winRVals.forEach(r=>{ const k=(Math.floor(r/BIN)*BIN).toFixed(2); if(k in buckets) buckets[k]++; });
+    const keys=Object.keys(buckets).map(Number).sort((a,b)=>a-b);
+    charts.dist=new Chart(document.getElementById('distChart'),{
+      type:'bar',
+      data:{labels:keys.map(k=>`+${k}R`),datasets:[{data:keys.map(k=>buckets[k.toFixed(2)]),
+        backgroundColor:'rgba(0,200,150,.55)',borderColor:'#00c896',borderWidth:1}]},
+      options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{
+        x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},
+        y:{ticks:{color:'#8b97a8',precision:0},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'Count',color:'#8b97a8'}}
+      }}});
+  }
+
+  // Setup performance
+  const bySetup={};
+  filteredTrades.forEach(r=>{ const k=r['Setup']||'Other'; if(!bySetup[k]) bySetup[k]=[]; bySetup[k].push(r); });
+  const setupStats=Object.entries(bySetup).map(([setup,rows])=>{ const ss=computeStats(rows); return ss&&ss.n>0?{setup,n:ss.n,wr:ss.winRate,exp:ss.expectancy}:null; }).filter(Boolean).sort((a,b)=>(b.exp??-99)-(a.exp??-99));
+  const catCanvas=document.getElementById('categoryChart');
+  const catParent=catCanvas.parentNode;
+  catParent.querySelectorAll('.chart-placeholder').forEach(e=>e.remove());
+  if(charts.cat) charts.cat.destroy();
+  if(!setupStats.length){
+    catCanvas.style.display='none';
+    const msg=document.createElement('div'); msg.className='chart-placeholder';
+    msg.textContent='No closed trades yet.'; catParent.appendChild(msg);
+  } else {
+    catCanvas.style.display='';
+    charts.cat=new Chart(catCanvas,{
+      type:'bar',
+      data:{labels:setupStats.map(s=>`${s.setup}  (n=${s.n})`),datasets:[{data:setupStats.map(s=>s.exp),
+        backgroundColor:setupStats.map(s=>s.exp>=0?'rgba(0,200,150,.55)':'rgba(255,77,77,.5)'),
+        borderColor:setupStats.map(s=>s.exp>=0?'#00c896':'#ff4d4d'),borderWidth:1}]},
+      options:{responsive:true,animation:false,indexAxis:'y',plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>{ const ss=setupStats[ctx.dataIndex]; return[`Expectancy: ${ss.exp>=0?'+':''}${ss.exp.toFixed(2)}R`,`Win rate: ${(ss.wr*100).toFixed(0)}%`];  }}}},
+        scales:{x:{ticks:{color:'#8b97a8',callback:v=>`${v}R`},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'Expectancy (R/trade)',color:'#8b97a8'}},
+                y:{ticks:{color:'#8b97a8'},grid:{display:false}}}}});
+  }
+
+  // Monthly heatmap
+  const byMonth={};
+  filteredTrades.filter(isClosed).forEach(r=>{ const t=parseTime(r['Time']); if(!t) return;
+    const key=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`;
+    const label=t.toLocaleString('default',{month:'short',year:'2-digit'});
+    if(!byMonth[key]) byMonth[key]={label,r:0};
+    byMonth[key].r+=tradeR(r)??0;
+  });
+  const months=Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0]));
+  const hmContainer=document.getElementById('monthlyHeatmap');
+  if(!months.length){ hmContainer.innerHTML='<div class="chart-placeholder">No closed trades yet.</div>'; }
+  else {
+    const maxAbs=Math.max(...months.map(([,v])=>Math.abs(v.r)));
+    hmContainer.innerHTML=`<div class="monthly-grid">${months.map(([,v])=>{
+      const int=maxAbs>0?Math.min(Math.abs(v.r)/maxAbs,1):0;
+      const bg=v.r>=0?`rgba(0,200,150,${0.12+int*.55})`:`rgba(255,77,77,${0.12+int*.55})`;
+      const fg=v.r>=0?'var(--accent)':'var(--negative)';
+      return`<div class="month-cell" style="background:${bg}"><div class="mc-label">${v.label}</div><div class="mc-value" style="color:${fg}">${v.r>=0?'+':''}${v.r.toFixed(1)}R</div></div>`;
+    }).join('')}</div>`;
+  }
+}
+
+function clearCanvas(id){ const c=document.getElementById(id); if(c){const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);} }
+
+// ── Trade Table ───────────────────────────────────────────────────────────────
+const PRIORITY_COLS=['Time','Stock','Gate','Setup','Status','Rank','Score','Signal Price','Target Price','Stop Price','Fill Price','Sold at','Exit Time'];
+const NUMERIC_COLS=new Set(['Score','Signal Price','Target Price','Stop Price','Fill Price','Qty','PnL','qty']);
+
+function orderCols(cols){
+  return [...PRIORITY_COLS.filter(c=>cols.includes(c)),...cols.filter(c=>!PRIORITY_COLS.includes(c))];
+}
+function rankPill(v){
+  const s=String(v||'');
+  if(/S-TIER/i.test(s)) return `<span class="pill s">${s}</span>`;
+  if(/A-TIER/i.test(s)) return `<span class="pill a">${s}</span>`;
+  if(/B-TIER/i.test(s)) return `<span class="pill b">${s}</span>`;
+  return s||'—';
+}
+
+function renderTradeTable(){
+  if(!filteredTrades.length){
+    document.getElementById('tableHead').innerHTML='';
+    document.getElementById('tableBody').innerHTML='<tr><td style="padding:14px;color:var(--text-muted)">No rows match current filters.</td></tr>';
+    document.getElementById('rowCount').textContent='0';
+    document.getElementById('pageInfo').textContent='—';
+    return;
+  }
+  const baseCols=orderCols(Object.keys(filteredTrades[0]).filter(c=>!c.startsWith('_')));
+  const cols=[...baseCols,'R'];
+  const sorted=[...filteredTrades].sort((a,b)=>{
+    let va,vb;
+    if(sortCol==='R'){va=tradeR(a);vb=tradeR(b);}else{va=a[sortCol];vb=b[sortCol];}
+    const na=sortCol==='R'?va:num(va),nb=sortCol==='R'?vb:num(vb);
+    const cmp=(na!==null&&na!==undefined&&nb!==null&&nb!==undefined)?na-nb:String(va??'').localeCompare(String(vb??''));
+    return sortAsc?cmp:-cmp;
+  });
+  const total=sorted.length, start=currentPage*PAGE_SIZE, end=Math.min(start+PAGE_SIZE,total);
+  const page=sorted.slice(start,end);
+  document.getElementById('rowCount').textContent=total.toLocaleString();
+  document.getElementById('pageInfo').textContent=`${start+1}–${end} of ${total.toLocaleString()}`;
+  document.getElementById('prevBtn').disabled=currentPage===0;
+  document.getElementById('nextBtn').disabled=end>=total;
+  document.getElementById('tableHead').innerHTML='<tr>'+cols.map(c=>`<th onclick="sortTrades('${c.replace(/'/g,"\\'")}')">${c}${c===sortCol?(sortAsc?' ↑':' ↓'):''}</th>`).join('')+'</tr>';
+  document.getElementById('tableBody').innerHTML=page.map(row=>'<tr>'+cols.map(c=>{
+    if(c==='R'){const r=tradeR(row);return r===null?'<td>—</td>':`<td class="${r>0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}R</td>`;}
+    const v=row[c];
+    if(v===null||v===undefined||v==='') return '<td>—</td>';
+    if(c==='Rank') return `<td>${rankPill(v)}</td>`;
+    if(c==='Status'){const s=String(v).toUpperCase();return`<td class="${s.includes('TP_HIT')?'pos':s.includes('SL_HIT')?'neg':''}">${v}</td>`;}
+    const n=num(v);
+    if(n!==null&&NUMERIC_COLS.has(c)) return `<td>${n.toLocaleString(undefined,{maximumFractionDigits:2})}</td>`;
+    return `<td>${v}</td>`;
+  }).join('')+'</tr>').join('');
+}
+function sortTrades(col){if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=false;}renderTradeTable();}
+function changePage(dir){const max=Math.ceil(filteredTrades.length/PAGE_SIZE)-1;currentPage=Math.max(0,Math.min(max,currentPage+dir));renderTradeTable();}
+
+// ── Market Dashboard View ─────────────────────────────────────────────────────
+function renderDashboardView(){
+  if(!dashData.sectors) return;
+  const sRows=dashData.sectors.rows;
+  const sH=(sRows[0]||[]);
+  const sx=sH.findIndex(h=>/vs spy 21d/i.test(h||''));
+  const sy=sH.findIndex(h=>/vs spy 5d/i.test(h||''));
+  const tIdx=sH.findIndex(h=>/ticker|symbol/i.test(h||''));
+  const sData=sRows.slice(1).map(r=>({
+    ticker:r[tIdx]||'',
+    x:parseFloat(String(r[sx]||'').replace(/[%,$]/g,'')),
+    y:parseFloat(String(r[sy]||'').replace(/[%,$]/g,''))
+  })).filter(d=>!isNaN(d.x)&&!isNaN(d.y));
+
+  const leadingCount   = sData.filter(d=>d.x>0&&d.y>0).length;
+  const laggingCount   = sData.filter(d=>d.x<0&&d.y<0).length;
+  const improvingCount = sData.filter(d=>d.x<0&&d.y>0).length;
+  const weakeningCount = sData.filter(d=>d.x>0&&d.y<0).length;
+  const topSector=sData.filter(d=>!isNaN(d.x)).sort((a,b)=>b.x-a.x)[0];
+  const sortedByRS=sData.filter(d=>!isNaN(d.x)).sort((a,b)=>b.x-a.x);
+
+  // Market permission panel
+  let regime='Caution', permText='Reduced', regimeCls='regime-caution', permCls='permission-reduced', regimeReason='Mixed signals — insufficient sector leadership.';
+  if(leadingCount>=4 && leadingCount>laggingCount*1.5){ regime='Bull'; permText='Enabled'; regimeCls='regime-bull'; permCls='permission-enabled'; regimeReason=`${leadingCount} sectors leading — broad-based strength. New longs permitted.`; }
+  else if(laggingCount>leadingCount || laggingCount>=4){ regime='Bear'; permText='Disabled'; regimeCls='regime-bear'; permCls='permission-disabled'; regimeReason=`${laggingCount} sectors lagging — risk-off environment. Avoid new longs.`; }
+  const bestSectors  = sortedByRS.slice(0,3).map(d=>d.ticker).join(', ')||'—';
+  const avoidSectors = sortedByRS.slice(-3).reverse().map(d=>d.ticker).join(', ')||'—';
+  const riskBias = regime==='Bull'?'Normal':'Defensive';
+
+  document.getElementById('permissionGrid').innerHTML=[
+    {label:'Market Regime',    value:regime,      vCls:regimeCls},
+    {label:'Long Permission',  value:permText,    vCls:permCls},
+    {label:'Best Sectors',     value:bestSectors, vCls:''},
+    {label:'Avoid Sectors',    value:avoidSectors,vCls:'neg'},
+    {label:'Risk Bias',        value:riskBias,    vCls:riskBias==='Normal'?'pos':'warn'},
+    {label:'Reason',           value:regimeReason,vCls:'', small:true},
+  ].map(c=>`<div class="permission-item">
+    <div class="pi-label">${c.label}</div>
+    <div class="pi-value ${c.vCls||''}" style="${c.small?'font-size:13px;font-weight:400':''}">${c.value}</div>
+  </div>`).join('');
+
+  // Sector pulse KPIs
+  document.getElementById('dashKpiRow').innerHTML=[
+    {label:'Leading Sectors',  value:leadingCount.toString(),   sub:'strong RS + accelerating', cls:'pos'},
+    {label:'Improving Sectors',value:improvingCount.toString(), sub:'weak RS but recovering',   cls:improvingCount>0?'warn':''},
+    {label:'Weakening Sectors',value:weakeningCount.toString(), sub:'strong RS but slowing',    cls:weakeningCount>0?'warn':''},
+    {label:'Lagging Sectors',  value:laggingCount.toString(),   sub:'weak RS + decelerating',   cls:laggingCount>0?'neg':''},
+    {label:'Top Sector (21D RS)',value:topSector?topSector.ticker:'—', sub:topSector?`${topSector.x>=0?'+':''}${topSector.x.toFixed(2)}% vs SPY`:''},
+  ].map(c=>`<div class="kpi-card"><div class="kpi-label">${c.label}</div><div class="kpi-value ${c.cls||''}">${c.value}</div><div class="kpi-sub">${c.sub}</div></div>`).join('');
+
+  // Tables
+  renderSimpleTable('macroTable',      sortByCol(dashData.macro.rows,'VS SPY 1D'));
+  renderSimpleTable('hardAssetsTable', sortByCol(dashData.hardAssets.rows,'VS SPY 1D'));
+  renderSimpleTable('sectorsTable',    sortByCol(dashData.sectors.rows,'VS SPY 21D'));
+  renderSimpleTable('top20Table',      dashData.top20.rows);
+
+  // Charts
+  buildHeaderIndexedChart('sectorChart', sortByCol(dashData.sectors.rows,'VS SPY 21D'), 'VS SPY 21D', '#00c896');
+  buildTop20SectorChart('top20Chart', dashData.top20.rows);
+  buildRRGChart('rrgChart', dashData.sectors.rows);
+}
+
+function renderSimpleTable(elId,rows){
+  const el=document.getElementById(elId);
+  if(!rows||!rows.length){el.querySelector('thead').innerHTML='';el.querySelector('tbody').innerHTML='<tr><td style="padding:10px;color:var(--text-muted)">No data.</td></tr>';return;}
+  const headers=rows[0];
+  el.querySelector('thead').innerHTML='<tr>'+headers.map(h=>`<th>${h??''}</th>`).join('')+'</tr>';
+  el.querySelector('tbody').innerHTML=rows.slice(1).map(r=>'<tr>'+headers.map((_,i)=>{
+    const v=r[i];
+    if(v===undefined||v===null||v==='') return '<td>—</td>';
+    const n=parseFloat(String(v).replace(/[%,$]/g,''));
+    if(!isNaN(n)&&/%|score|vs/i.test(headers[i]||'')) return`<td class="${n>0?'pos':n<0?'neg':''}">${v}</td>`;
+    return`<td>${v}</td>`;
+  }).join('')+'</tr>').join('');
+}
+
+function sortByCol(rows,colName){
+  if(!rows||rows.length<2) return rows;
+  const h=rows[0];
+  const idx=h.findIndex(c=>String(c||'').trim().toLowerCase()===colName.toLowerCase());
+  if(idx<0) return rows;
+  return[h,...rows.slice(1).slice().sort((a,b)=>{
+    const na=parseFloat(String(a[idx]||'').replace(/[%,$]/g,'')),nb=parseFloat(String(b[idx]||'').replace(/[%,$]/g,''));
+    if(isNaN(na)&&isNaN(nb)) return 0; if(isNaN(na)) return 1; if(isNaN(nb)) return -1;
+    return nb-na;
+  })];
+}
+
+function buildHeaderIndexedChart(canvasId,rows,metricHeader,color){
+  const canvas=document.getElementById(canvasId);
+  if(!rows||rows.length<2){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const headers=rows[0];
+  const metricIdx=headers.findIndex(h=>String(h||'').trim().toLowerCase()===metricHeader.toLowerCase());
+  const labelIdx=headers.findIndex(h=>/ticker|symbol/i.test(h||''))>=0?headers.findIndex(h=>/ticker|symbol/i.test(h||'')):0;
+  if(metricIdx<0){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const data=rows.slice(1).map(r=>({label:r[labelIdx],val:parseFloat(String(r[metricIdx]||'').replace(/[%,$]/g,''))}))
+    .filter(d=>d.label&&!isNaN(d.val)).sort((a,b)=>b.val-a.val).slice(0,20);
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId]=new Chart(canvas,{
+    type:'bar',data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.val),
+      backgroundColor:data.map(d=>d.val>=0?color+'99':'#ff4d4d99'),
+      borderColor:data.map(d=>d.val>=0?color:'#ff4d4d'),borderWidth:1}]},
+    options:{responsive:true,animation:false,indexAxis:'y',plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}},y:{ticks:{color:'#8b97a8'},grid:{color:'rgba(255,255,255,.05)'}}}}
+  });
+}
+
+function buildTop20SectorChart(canvasId,rows){
+  const canvas=document.getElementById(canvasId);
+  if(!rows||rows.length<2){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const headers=rows[0];
+  const sectorIdx=headers.findIndex(h=>/sector/i.test(h||''));
+  if(sectorIdx<0){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const counts={};
+  rows.slice(1).forEach(r=>{ const s=r[sectorIdx]||'Unknown'; counts[s]=(counts[s]||0)+1; });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const palette=['#00c896','#f5a623','#5b9bd5','#ff4d4d','#b39ddb','#4db6ac','#ff8a80','#80cbc4','#ffcc02','#a5d6a7'];
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId]=new Chart(canvas,{
+    type:'doughnut',
+    data:{labels:sorted.map(([s])=>s),datasets:[{data:sorted.map(([,n])=>n),
+      backgroundColor:sorted.map((_,i)=>palette[i%palette.length]+'cc'),
+      borderColor:sorted.map((_,i)=>palette[i%palette.length]),borderWidth:1}]},
+    options:{responsive:true,animation:false,
+      plugins:{legend:{position:'right',labels:{color:'#8b97a8',font:{size:11},padding:10}},
+        tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed} signals`}}}}
+  });
+}
+
+function buildRRGChart(canvasId,rows){
+  const canvas=document.getElementById(canvasId);
+  if(!rows||rows.length<2){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const h=rows[0];
+  const xIdx=h.findIndex(c=>/vs spy 21d/i.test(c||''));
+  const yIdx=h.findIndex(c=>/vs spy 5d/i.test(c||''));
+  const lIdx=h.findIndex(c=>/ticker|symbol/i.test(c||''))>=0?h.findIndex(c=>/ticker|symbol/i.test(c||'')):0;
+  if(xIdx<0||yIdx<0){if(charts[canvasId]){charts[canvasId].destroy();delete charts[canvasId];}return;}
+  const pts=rows.slice(1).map(r=>({
+    label:r[lIdx],
+    x:parseFloat(String(r[xIdx]||'').replace(/[%,$]/g,'')),
+    y:parseFloat(String(r[yIdx]||'').replace(/[%,$]/g,''))
+  })).filter(p=>p.label&&!isNaN(p.x)&&!isNaN(p.y));
+  const qc=(x,y)=>x>=0&&y>=0?'#00c896':x<0&&y>=0?'#5b9bd5':x<0&&y<0?'#ff4d4d':'#f5a623';
+  if(charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId]=new Chart(canvas,{
+    type:'scatter',
+    data:{datasets:[{data:pts.map(p=>({x:p.x,y:p.y,label:p.label})),
+      backgroundColor:pts.map(p=>qc(p.x,p.y)),borderColor:'#0d1117',borderWidth:1.5,pointRadius:7,pointHoverRadius:9}]},
+    options:{responsive:true,animation:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{const p=ctx.raw;return`${p.label}  RS(21D) ${p.x>=0?'+':''}${p.x.toFixed(2)}%  Mom(5D) ${p.y>=0?'+':''}${p.y.toFixed(2)}%`;  }}}},
+      scales:{
+        x:{title:{display:true,text:'RS vs SPY 21D (%)',color:'#8b97a8'},ticks:{color:'#8b97a8'},grid:{color:c=>c.tick.value===0?'rgba(255,255,255,.3)':'rgba(255,255,255,.05)'}},
+        y:{title:{display:true,text:'Momentum vs SPY 5D (%)',color:'#8b97a8'},ticks:{color:'#8b97a8'},grid:{color:c=>c.tick.value===0?'rgba(255,255,255,.3)':'rgba(255,255,255,.05)'}}
+      }},
+    plugins:[{id:'rrgLabels',afterDatasetsDraw(chart){
+      const{ctx,chartArea:{left,right,top,bottom},scales:{x,y}}=chart;
+      ctx.save();ctx.font='11px -apple-system,sans-serif';ctx.fillStyle='rgba(255,255,255,.2)';
+      ctx.fillText('IMPROVING',left+8,top+14);ctx.fillText('LEADING',right-60,top+14);
+      ctx.fillText('LAGGING',left+8,bottom-8);ctx.fillText('WEAKENING',right-72,bottom-8);
+      ctx.fillStyle='rgba(232,237,243,.8)';ctx.font='10px -apple-system,sans-serif';
+      chart.data.datasets[0].data.forEach(p=>{ctx.fillText(p.label,x.getPixelForValue(p.x)+9,y.getPixelForValue(p.y)-5);});
+      ctx.restore();
+    }}]
+  });
+}
+
+// ── Simulated Trade Equivalent ────────────────────────────────────────────────
+function renderSimTradeEquivalent(){
+  const container=document.getElementById('simTradeContent');
+  if(!container) return;
+  const SIM_R_DOLLARS=125, SIM_ACCOUNT=5000, REAL_MAX_CONC=2;
+  const EXIT_TIME_KEYS=['Exit Time','Exit_Time','ExitTime','Close Time','Closed Time','exit_time'];
+  const exitTimeKey=allTrades.length ? EXIT_TIME_KEYS.find(k=>allTrades.some(r=>r[k]!=null&&r[k]!=='')) : null;
+  const closedAll=allTrades.filter(isClosed).filter(r=>parseTime(r['Time']));
+  if(!closedAll.length){ container.innerHTML='<div class="chart-placeholder">No closed trades yet.</div>'; return; }
+  let multiplier=null,avgPaperConc=null,elapsedWks=null,simMonths=null,closedWithExit=[];
+  if(exitTimeKey){
+    closedWithExit=closedAll.filter(r=>parseTime(r[exitTimeKey]));
+    if(closedWithExit.length){
+      let overlapSum=0;
+      closedWithExit.forEach(trade=>{
+        const tEn=parseTime(trade['Time']).getTime(),tEx=parseTime(trade[exitTimeKey]).getTime();
+        const overlap=closedWithExit.filter(o=>o!==trade&&parseTime(o['Time']).getTime()<tEx&&parseTime(o[exitTimeKey]).getTime()>tEn).length;
+        overlapSum+=overlap;
+      });
+      avgPaperConc=overlapSum/closedWithExit.length;
+      multiplier=Math.max(1,avgPaperConc/REAL_MAX_CONC);
+      const firstMs=Math.min(...closedWithExit.map(r=>parseTime(r['Time']).getTime()));
+      const elapsed=Date.now()-firstMs;
+      elapsedWks=elapsed/86400000/7;
+      simMonths=(elapsed/86400000)*multiplier/30.44;
+    }
+  }
+  const noExitTime=!exitTimeKey||!closedWithExit.length;
+  const ERA_NOTES={v10:'baseline pre-5/29',v11:'UKCE opt 5/29–6/8',v12:'current (6/8+)'};
+  const eraStats=['v10','v11','v12'].map(era=>{
+    const eraAll=closedAll.filter(r=>r._era===era);
+    const rVals=eraAll.map(tradeR).filter(v=>v!==null);
+    const cumR=rVals.reduce((a,b)=>a+b,0);
+    let simMo=null,annR=null,annDollar=null,annPct=null;
+    if(!noExitTime&&multiplier!==null){
+      const withExit=eraAll.filter(r=>parseTime(r[exitTimeKey]));
+      if(withExit.length){
+        const entryTimes=withExit.map(r=>parseTime(r['Time']).getTime());
+        const exitTimes=withExit.map(r=>parseTime(r[exitTimeKey]).getTime());
+        const vDays=(Math.max(...exitTimes)-Math.min(...entryTimes))/86400000;
+        const vSimDays=vDays*multiplier;
+        simMo=vSimDays/30.44;
+        const vSimYears=vSimDays/365;
+        if(rVals.length>=5&&vSimYears>0){ annR=cumR/vSimYears; annDollar=annR*SIM_R_DOLLARS; annPct=annDollar/SIM_ACCOUNT*100; }
+      }
+    }
+    return{era,note:ERA_NOTES[era],n:rVals.length,cumR,simMo,annR,annDollar,annPct};
+  });
+  const fmtCumR=s=>s.n===0?'—':`${s.cumR>=0?'+':''}${s.cumR.toFixed(1)}R`;
+  const fmtMo=v=>v===null?'—':`~${v.toFixed(1)} mo`;
+  const fmtAnnR=s=>s.annR===null?(s.n<5?(s.n===0?'— (no data)':'— (<5 trades)'):'—'):`${s.annR>=0?'+':''}${s.annR.toFixed(1)}R/yr`;
+  const fmtPct=s=>s.annPct===null?'—':`${s.annPct>=0?'+':''}${s.annPct.toFixed(0)}%`;
+  const rCls=v=>v===null?'':v>0?'pos':v<0?'neg':'';
+  const muted=cond=>cond?'style="color:var(--text-muted)"':'';
+  const headerHTML=noExitTime
+    ?`<div class="info-banner">⚠ Speed multiplier requires an <strong>Exit Time</strong> column in the ledger. Version trade counts and cumulative R are still shown below.</div>`
+    :`<div style="display:flex;gap:28px;flex-wrap:wrap;margin:10px 0 18px">
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">Speed Multiplier</div>
+          <span style="font-size:26px;font-weight:700;color:#fff">${multiplier.toFixed(1)}×</span>
+          <span style="font-size:12px;color:var(--text-muted)"> (${avgPaperConc.toFixed(1)} avg concurrent ÷ ${REAL_MAX_CONC} real)</span></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">Elapsed Real Time</div>
+          <span style="font-size:26px;font-weight:700;color:#fff">${elapsedWks.toFixed(1)} wks</span>
+          <span style="font-size:12px;color:var(--text-muted)"> → <span class="warn">~${simMonths.toFixed(1)} months</span> simulated</span></div>
+       </div>`;
+  const eraRows=eraStats.map(s=>{
+    const noData=s.n<5;
+    return`<tr>
+      <td style="font-weight:700;color:#fff">${s.era} <span style="font-size:10px;color:var(--text-muted);font-weight:400">${s.note}</span></td>
+      <td>${s.n}</td><td class="${rCls(s.cumR)}" ${muted(s.n===0)}>${fmtCumR(s)}</td>
+      ${noExitTime?`<td style="color:var(--text-muted)">—</td><td style="color:var(--text-muted)">—</td><td style="color:var(--text-muted)">—</td>`
+        :`<td ${muted(noData)}>${fmtMo(s.simMo)}</td><td class="${rCls(s.annR)}" ${muted(noData)}>${fmtAnnR(s)}</td><td class="${rCls(s.annPct)}" ${muted(noData)}>${fmtPct(s)}</td>`}
+    </tr>`;
+  }).join('');
+  container.innerHTML=headerHTML+`
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Version Breakdown</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Version</th>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Trades</th>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Cum R</th>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Sim Time</th>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Ann. R/yr</th>
+        <th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Ann. %</th>
+      </tr></thead>
+      <tbody>${eraRows}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:10px">Ann. % = annualized $ return on $5K account · $${SIM_R_DOLLARS}/R · — shown when &lt;5 closed trades</div>`;
+}
+
+// ── Refresh loop ──────────────────────────────────────────────────────────────
+function setRefreshInterval(seconds){
+  clearInterval(refreshTimer); REFRESH_SEC=parseInt(seconds);
+  const bar=document.getElementById('refreshBar');
+  if(REFRESH_SEC>0){
+    bar.style.transform='scaleX(1)';bar.style.transition=`transform ${REFRESH_SEC}s linear`;
+    requestAnimationFrame(()=>{bar.style.transform='scaleX(0)';});
+    refreshTimer=setInterval(()=>{
+      fetchAll();
+      bar.style.transition='none';bar.style.transform='scaleX(1)';
+      requestAnimationFrame(()=>{bar.style.transition=`transform ${REFRESH_SEC}s linear`;bar.style.transform='scaleX(0)';});
+    },REFRESH_SEC*1000);
+  } else bar.style.transform='scaleX(0)';
+}
+function setStatus(s){
+  const d=document.getElementById('statusDot'),t=document.getElementById('statusText');
+  if(s==='live'){d.className='status-dot';t.textContent='Live';}
+  if(s==='fetching'){d.className='status-dot';t.textContent='Fetching…';}
+  if(s==='error'){d.className='status-dot error';t.textContent='Error';}
+}
+function showError(m){const b=document.getElementById('errorBanner');b.textContent=m;b.style.display='block';}
+function hideError(){document.getElementById('errorBanner').style.display='none';}
+
+fetchAll();
+setRefreshInterval(REFRESH_SEC);
+</script>
+</body>
+</html>
